@@ -1,0 +1,32 @@
+{
+  "_comment": "s.js(Admin SDK)로 완전 이전한 뒤 적용하는 잠금 규칙. Admin SDK는 규칙을 우회하므로 s.js는 정상 작동하고, 클라이언트(브라우저)의 직접 쓰기는 전부 차단됩니다.",
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "users": {
+      ".read": false,
+      ".write": false,
+      "$uid": {
+        "_note": "클라는 users 를 읽지도 쓰지도 못함. 프로필/인벤은 전부 s.js(WebSocket) 경유. pw_hash 노출 0."
+      }
+    },
+
+    "map_tiles": {
+      "$wid": {
+        ".read": true,
+        ".write": false,
+        "_note": "맵은 클라가 읽기만(로딩). 쓰기는 s.js(Admin)만."
+      }
+    },
+
+    "chests":          { "$wid": { ".read": true, ".write": false } },
+    "corpses":         { "$wid": { ".read": true, ".write": false } },
+    "parked_vehicles": { "$wid": { ".read": true, ".write": false } },
+    "animals_state":   { "$wid": { ".read": true, ".write": false } },
+    "pet_eggs":        { "$sid": { ".read": true, ".write": false } },
+    "satellites":      { ".read": true, ".write": false },
+    "map_meta":        { "$wid": { ".read": true, ".write": false } },
+    "server_registry": { ".read": true, ".write": false }
+  }
+}

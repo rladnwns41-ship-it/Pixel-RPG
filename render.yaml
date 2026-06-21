@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: medieval-realm
+    runtime: node
+    plan: starter        # 콜드 스타트 없애려면 유료(starter $7). 무료면 free 로 변경
+    buildCommand: npm install
+    startCommand: node s.js
+    envVars:
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false      # Render 대시보드에서 직접 입력 (서비스계정 JSON, 비밀)
+      - key: FIREBASE_DB_URL
+        sync: false      # Realtime Database URL

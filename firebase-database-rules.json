@@ -1,0 +1,89 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "users": {
+      ".read": true,
+      ".indexOn": ["nickname"],
+      "$uid": {
+        ".write": true,
+        ".validate": "$uid.matches(/^[a-zA-Z0-9_-]{1,40}$/)",
+
+        "gold":        { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000000" },
+        "level":       { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 999" },
+        "xp":          { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000000" },
+        "max_xp":      { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000000" },
+        "hp":          { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000" },
+        "max_hp":      { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 100000" },
+        "mp":          { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000" },
+        "max_mp":      { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000" },
+        "atk":         { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000" },
+        "def_stat":    { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000" },
+        "skill_points":{ ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000" },
+        "kills":       { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000" },
+
+        "nickname":  { ".validate": "newData.isString() && newData.val().length <= 24" },
+        "pw_hash":   { ".validate": "newData.isString() && newData.val().length <= 256" },
+        "bio":       { ".validate": "newData.isString() && newData.val().length <= 500" },
+        "inventory": { ".validate": "newData.isString() && newData.val().length <= 20000" },
+        "hotbar":    { ".validate": "newData.isString() && newData.val().length <= 4000" },
+        "equipment": { ".validate": "newData.isString() && newData.val().length <= 4000" },
+        "skills":    { ".validate": "newData.isString() && newData.val().length <= 4000" },
+        "costume":   { ".validate": "newData.isString() && newData.val().length <= 2000" },
+        "team_id":   { ".validate": "newData.isString() && newData.val().length <= 64" },
+        "egg_claimed": { ".validate": "newData.isString() && newData.val().length <= 64 || newData.val() == null" },
+
+        "_sv": { ".validate": "newData.isNumber()" },
+        "_lt": { ".validate": "newData.isNumber()" },
+
+        "$other": { ".validate": "newData.isString() && newData.val().length <= 2000 || newData.isNumber() || newData.isBoolean()" }
+      }
+    },
+
+    "channels": {
+      "$ch": {
+        ".read": true,
+        ".write": true,
+        ".indexOn": ["ts"],
+        "$msg": {
+          "event":   { ".validate": "newData.isString() && newData.val().length <= 64" },
+          "ts":      { ".validate": "newData.isNumber()" },
+          "payload": { ".validate": "newData.hasChildren() || newData.isString()" }
+        }
+      }
+    },
+
+    "map_tiles": {
+      "$wid": {
+        ".read": true,
+        ".write": true,
+        "$key": {
+          "x":    { ".validate": "newData.isNumber()" },
+          "y":    { ".validate": "newData.isNumber()" },
+          "tile": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 999" }
+        }
+      }
+    },
+
+    "chests":           { "$wid": { ".read": true, ".write": true } },
+    "corpses":          { "$wid": { ".read": true, ".write": true } },
+    "parked_vehicles":  { "$wid": { ".read": true, ".write": true } },
+    "animals_state":    { "$wid": { ".read": true, ".write": true } },
+    "pet_eggs":         { "$sid": { ".read": true, ".write": true } },
+    "satellites":       { ".read": true, ".write": true },
+    "map_meta":         { "$wid": { ".read": true, ".write": true } },
+    "pending_gifts":    { "$uid": { ".read": true, ".write": true } },
+    "abuse_warnings":   { "$uid": { ".read": true, ".write": true } },
+
+    "server_registry": {
+      ".read": true,
+      ".write": true,
+      ".indexOn": ["updated_at"],
+      "$key": {
+        "id":           { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "player_count": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000" }
+      }
+    }
+  }
+}
