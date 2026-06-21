@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>KWJ</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400&family=Geist:wght@300;400;500&display=swap');
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%; height: 100vh;
+      background: #eef1f7;
+      overflow: hidden;
+      font-family: 'Geist', 'Inter', sans-serif;
+    }
+
+    canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%; height: 100%;
+    }
+
+    .wrap {
+      position: fixed;
+      left: 48px;
+      bottom: 52px;
+      z-index: 10;
+      opacity: 0;
+      transform: translateY(6px);
+      animation: up .7s cubic-bezier(.22,1,.36,1) .6s forwards;
+    }
+
+    .label {
+      font-size: 10px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: #94a3b8;
+      font-weight: 300;
+      margin-bottom: 8px;
+    }
+
+    .name {
+      font-size: clamp(32px, 4vw, 52px);
+      font-weight: 500;
+      color: #0f172a;
+      letter-spacing: -.02em;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+
+    .name .accent { color: #2563eb; }
+    .name .dim    { color: #94a3b8; }
+
+    .sub {
+      font-family: 'Geist Mono', monospace;
+      font-size: 11px;
+      font-weight: 300;
+      color: #94a3b8;
+      letter-spacing: .04em;
+      margin-bottom: 24px;
+    }
+
+    .progress {
+      width: 160px;
+      height: 2px;
+      background: #dde3ee;
+      border-radius: 99px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: #2563eb;
+      border-radius: 99px;
+    }
+
+    /* ============ 차단 화면 ============ */
+    .blocked-screen {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #eef1f7;
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .blocked-screen.show { display: flex; }
+
+    .blocked-card {
+      position: relative;
+      width: min(480px, calc(100vw - 48px));
+      padding: 52px 48px 44px;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      animation: up .55s cubic-bezier(.22,1,.36,1) forwards;
+    }
+
+    .blocked-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: 'Geist Mono', monospace;
+      font-size: 9px;
+      font-weight: 400;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: #ef4444;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 3px;
+      padding: 4px 10px;
+      margin-bottom: 28px;
+    }
+    .blocked-badge::before {
+      content: '';
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: #ef4444;
+      flex-shrink: 0;
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .3; }
+    }
+
+    .blocked-title {
+      font-size: clamp(24px, 3.5vw, 34px);
+      font-weight: 500;
+      color: #0f172a;
+      letter-spacing: -.02em;
+      line-height: 1.15;
+      margin-bottom: 14px;
+    }
+    .blocked-title .studio {
+      color: #2563eb;
+    }
+
+    .blocked-desc {
+      font-size: 13px;
+      font-weight: 300;
+      color: #64748b;
+      line-height: 1.75;
+      margin-bottom: 36px;
+    }
+
+    .blocked-divider {
+      width: 100%;
+      height: 1px;
+      background: #e2e8f0;
+      margin-bottom: 28px;
+    }
+
+    .blocked-contact-label {
+      font-family: 'Geist Mono', monospace;
+      font-size: 9px;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      color: #94a3b8;
+      margin-bottom: 8px;
+    }
+
+    .blocked-email {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'Geist Mono', monospace;
+      font-size: 12px;
+      font-weight: 400;
+      color: #2563eb;
+      text-decoration: none;
+      letter-spacing: .02em;
+      transition: opacity .15s;
+    }
+    .blocked-email:hover { opacity: .7; }
+    .blocked-email svg {
+      width: 14px; height: 14px;
+      flex-shrink: 0;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .blocked-corner {
+      position: absolute;
+      top: 20px; right: 20px;
+      font-family: 'Geist Mono', monospace;
+      font-size: 9px;
+      color: #cbd5e1;
+      letter-spacing: .1em;
+    }
+
+    /* ============ 개인정보 동의 모달 ============ */
+    .consent-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, .45);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      opacity: 0;
+      transition: opacity .3s ease;
+    }
+    .consent-overlay.show {
+      display: flex;
+      opacity: 1;
+    }
+
+    .consent-card {
+      position: relative;
+      width: min(520px, 100%);
+      max-height: 88vh;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: consentIn .5s cubic-bezier(.22,1,.36,1);
+      box-shadow: 0 24px 64px -16px rgba(15,23,42,.18);
+    }
+    @keyframes consentIn {
+      from { opacity: 0; transform: translateY(24px) scale(.98); }
+      to   { opacity: 1; transform: none; }
+    }
+
+    .consent-corner {
+      position: absolute;
+      top: 18px; right: 22px;
+      font-family: 'Geist Mono', monospace;
+      font-size: 9px;
+      color: #cbd5e1;
+      letter-spacing: .1em;
+    }
+
+    .consent-header {
+      padding: 32px 32px 4px;
+    }
+    .consent-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: 'Geist Mono', monospace;
+      font-size: 9px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: #2563eb;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 3px;
+      padding: 4px 10px;
+      margin-bottom: 20px;
+    }
+    .consent-badge::before {
+      content: '';
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: #2563eb;
+    }
+    .consent-title {
+      font-size: 24px;
+      font-weight: 500;
+      color: #0f172a;
+      letter-spacing: -.02em;
+      line-height: 1.25;
+      margin-bottom: 6px;
+    }
+    .consent-sub {
+      font-family: 'Geist Mono', monospace;
+      font-size: 11px;
+      color: #94a3b8;
+      letter-spacing: .04em;
+    }
+
+    .consent-body {
+      padding: 24px 32px 8px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .consent-body::-webkit-scrollbar { width: 6px; }
+    .consent-body::-webkit-scrollbar-thumb {
+      background: #e2e8f0;
+      border-radius: 99px;
+    }
+
+    .consent-section {
+      margin-bottom: 22px;
+    }
+    .consent-section-title {
+      font-family: 'Geist Mono', monospace;
+      font-size: 10px;
+      font-weight: 400;
+      color: #2563eb;
+      letter-spacing: .14em;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+    }
+    .consent-section-body {
+      font-size: 13px;
+      color: #475569;
+      line-height: 1.75;
+      font-weight: 300;
+    }
+    .consent-section-body ul {
+      list-style: none;
+      padding: 0;
+    }
+    .consent-section-body li {
+      padding-left: 14px;
+      position: relative;
+      margin-bottom: 3px;
+    }
+    .consent-section-body li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 11px;
+      width: 5px;
+      height: 1px;
+      background: #cbd5e1;
+    }
+
+    .consent-warn {
+      font-size: 12.5px;
+      color: #b45309;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: 4px;
+      padding: 14px 16px;
+      line-height: 1.7;
+      font-weight: 300;
+    }
+
+    .consent-footer {
+      padding: 20px 32px 24px;
+      border-top: 1px solid #f1f5f9;
+      background: #fafbfc;
+    }
+    .consent-check {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      user-select: none;
+      margin-bottom: 14px;
+      padding: 12px 14px;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      transition: all .15s;
+      background: #fff;
+    }
+    .consent-check:hover { border-color: #cbd5e1; }
+    .consent-check.checked {
+      border-color: #2563eb;
+      background: #eff6ff;
+    }
+    .consent-check-box {
+      width: 18px; height: 18px;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 3px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all .15s;
+      background: #fff;
+    }
+    .consent-check.checked .consent-check-box {
+      background: #2563eb;
+      border-color: #2563eb;
+    }
+    .consent-check-box svg {
+      width: 12px; height: 12px;
+      stroke: #fff;
+      stroke-width: 3;
+      fill: none;
+      opacity: 0;
+      transition: opacity .15s;
+    }
+    .consent-check.checked .consent-check-box svg { opacity: 1; }
+    .consent-check-label {
+      font-size: 13px;
+      color: #0f172a;
+      font-weight: 400;
+      flex: 1;
+    }
+    .consent-check-label .required {
+      color: #ef4444;
+      font-family: 'Geist Mono', monospace;
+      font-size: 9px;
+      letter-spacing: .1em;
+      margin-left: 6px;
+      text-transform: uppercase;
+    }
+
+    .consent-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .consent-btn {
+      padding: 12px 18px;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      color: #64748b;
+      font-family: 'Geist', sans-serif;
+      font-size: 13px;
+      font-weight: 400;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .consent-btn:hover { background: #f8fafc; }
+    .consent-btn.primary {
+      flex: 1;
+      background: #2563eb;
+      color: #fff;
+      border-color: #2563eb;
+      font-weight: 500;
+    }
+    .consent-btn.primary:hover:not(:disabled) { background: #1d4ed8; }
+    .consent-btn.primary:disabled {
+      background: #cbd5e1;
+      border-color: #cbd5e1;
+      cursor: not-allowed;
+    }
+
+    @keyframes up   { to { opacity: 1; transform: none; } }
+    body.out { animation: fadeOut .5s ease forwards; }
+    @keyframes fadeOut { to { opacity: 0; } }
+  </style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div class="wrap" id="mainWrap">
+  <p class="label">made by</p>
+  <h1 class="name"><span class="accent">KWJ</span> <span class="dim">/ 김우준</span></h1>
+  <p class="sub">aoao-studio.onrender.com</p>
+  <div class="progress"><div class="progress-fill" id="progressFill"></div></div>
+</div>
+
+<!-- ============ 개인정보 동의 모달 ============ -->
+<div class="consent-overlay" id="consentOverlay">
+  <div class="consent-card">
+    <span class="consent-corner">aoao-studio</span>
+    <div class="consent-header">
+      <div class="consent-badge">개인정보 처리 방침</div>
+      <h2 class="consent-title">개인정보 수집·이용 동의</h2>
+      <p class="consent-sub">aoao studio / privacy policy</p>
+    </div>
+
+    <div class="consent-body">
+      <div class="consent-section">
+        <div class="consent-section-title">1. 수집 항목</div>
+        <div class="consent-section-body">
+          <ul>
+            <li>IP 주소 및 접속 위치 정보</li>
+            <li>기기 식별 정보 (브라우저, OS, 화면 해상도, 그래픽 카드 정보 등)</li>
+            <li>User-Agent 및 접속 일시</li>
+            <li>서비스 이용 기록 및 행위 로그</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="consent-section">
+        <div class="consent-section-title">2. 수집 및 이용 목적</div>
+        <div class="consent-section-body">
+          <ul>
+            <li>서비스 운영 및 부정 이용 방지</li>
+            <li>보안 위협 탐지 및 차단 조치</li>
+            <li>서비스 품질 개선 및 통계 분석</li>
+            <li>운영자의 정당한 조사 활동</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="consent-section">
+        <div class="consent-section-title">3. 보유 및 이용 기간</div>
+        <div class="consent-section-body">
+          수집일로부터 운영 목적 달성 시까지 보관하며, 보안 사고 조사 등 정당한 사유가 있는 경우 별도 기간 동안 보관될 수 있습니다.
+        </div>
+      </div>
+
+      <div class="consent-section">
+        <div class="consent-section-title">4. 운영자의 권한 (중요)</div>
+        <div class="consent-warn">
+          운영상 필요한 상황(부정 이용 의심, 보안 사고, 외부 신고 접수 등)이 발생하는 경우, aoao studio 운영자는 수집된 <strong>개인정보 및 접속 로그 전체</strong>를 열람·조사할 수 있습니다. 본 동의는 이러한 조사 활동에 대한 동의를 포함합니다.
+        </div>
+      </div>
+
+      <div class="consent-section">
+        <div class="consent-section-title">5. 동의 거부 권리</div>
+        <div class="consent-section-body">
+          귀하는 본 동의를 거부할 권리가 있습니다. 다만 동의하지 않으실 경우 서비스 이용이 제한됩니다.
+        </div>
+      </div>
+    </div>
+
+    <div class="consent-footer">
+      <div class="consent-check" id="consentCheck">
+        <span class="consent-check-box">
+          <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+        <span class="consent-check-label">
+          위 개인정보 수집·이용에 모두 동의합니다
+          <span class="required">필수</span>
+        </span>
+      </div>
+
+      <div class="consent-actions">
+        <button class="consent-btn" id="consentReject">거부</button>
+        <button class="consent-btn primary" id="consentAccept" disabled>동의하고 시작</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 차단 화면 ============ -->
+<div class="blocked-screen" id="blockedScreen">
+  <div class="blocked-card">
+    <span class="blocked-corner">aoao-studio</span>
+    <div class="blocked-badge" id="blockedBadge">접근 차단됨</div>
+    <h1 class="blocked-title" id="blockedTitle"><span class="studio">aoao</span> studio가<br>조사 중입니다</h1>
+    <p class="blocked-desc" id="blockedDesc">
+      현재 귀하의 접속이 일시적으로 제한되어 있습니다.<br>
+      해당 조치에 이의가 있으신 경우 아래 이메일로<br>
+      문의해 주시기 바랍니다.
+    </p>
+    <div class="blocked-divider"></div>
+    <p class="blocked-contact-label">이의 제기</p>
+    <a class="blocked-email" href="mailto:rladnwns54@gmail.com">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 7l10 7 10-7"/></svg>
+      rladnwns54@gmail.com
+    </a>
+  </div>
+</div>
+
+<script>
+// =====================================================
+// Supabase 설정
+// =====================================================
+const SUPABASE_URL  = 'https://hhetfxobzbimkanmsvvs.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhoZXRmeG9iemJpbWthbm1zdnZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0MDQzNzksImV4cCI6MjA5Mzk4MDM3OX0.CnAUIX0MHJhzVqY8eicmk90MOA-8Ncf0qKgDsHGLzX4';
+const REDIRECT_TO   = '/main';
+const CONSENT_KEY   = 'aoao_privacy_consent_v1';
+
+const headers = {
+  'Content-Type': 'application/json',
+  'apikey': SUPABASE_ANON,
+  'Authorization': `Bearer ${SUPABASE_ANON}`,
+};
+
+// =====================================================
+// 기기 핑거프린트 (브라우저 + 하드웨어 기반 고유 ID)
+// =====================================================
+async function getDeviceFingerprint() {
+  // 1. Canvas 핑거프린트 (GPU 렌더링 방식이 기기마다 다름)
+  let canvasData = '';
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 280; canvas.height = 60;
+    const ctx2 = canvas.getContext('2d');
+    ctx2.textBaseline = 'top';
+    ctx2.font = "14px 'Arial'";
+    ctx2.fillStyle = '#f60';
+    ctx2.fillRect(125, 1, 62, 20);
+    ctx2.fillStyle = '#069';
+    ctx2.fillText('aoao-fp-🔒', 2, 15);
+    ctx2.fillStyle = 'rgba(102, 204, 0, 0.7)';
+    ctx2.fillText('aoao-fp-🔒', 4, 17);
+    canvasData = canvas.toDataURL();
+  } catch (e) {}
+
+  // 2. WebGL 핑거프린트 (GPU 모델까지 추출 가능)
+  let webglData = '';
+  try {
+    const gl = document.createElement('canvas').getContext('webgl')
+            || document.createElement('canvas').getContext('experimental-webgl');
+    if (gl) {
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      const vendor   = ext ? gl.getParameter(ext.UNMASKED_VENDOR_WEBGL)   : '';
+      const renderer = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : '';
+      webglData = `${vendor}|${renderer}|${gl.getParameter(gl.VERSION)}`;
+    }
+  } catch (e) {}
+
+  // 3. 하드웨어/시스템 정보 합치기
+  const parts = [
+    navigator.userAgent,
+    navigator.language,
+    (navigator.languages || []).join(','),
+    navigator.platform,
+    navigator.hardwareConcurrency || '',     // CPU 코어 수
+    navigator.deviceMemory || '',             // RAM (GB 단위)
+    navigator.maxTouchPoints || '',
+    `${screen.width}x${screen.height}x${screen.colorDepth}`,
+    `${screen.availWidth}x${screen.availHeight}`,
+    new Date().getTimezoneOffset(),
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+    canvasData,
+    webglData,
+  ].join('###');
+
+  // 4. SHA-256 해시화 → 고유 ID
+  const enc = new TextEncoder();
+  const buf = await crypto.subtle.digest('SHA-256', enc.encode(parts));
+  return Array.from(new Uint8Array(buf))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+// =====================================================
+// IP 가져오기 (다중 폴백)
+// =====================================================
+async function fetchWithTimeout(url, ms = 3000) {
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(tid);
+    return res;
+  } catch {
+    clearTimeout(tid);
+    throw new Error('timeout');
+  }
+}
+
+async function getIP() {
+  const sources = [
+    { url: 'https://api.ipify.org?format=json',   parse: d => d.ip },
+    { url: 'https://api64.ipify.org?format=json', parse: d => d.ip },
+    { url: 'https://ipapi.co/json/',              parse: d => d.ip },
+    { url: 'https://ipinfo.io/json',              parse: d => d.ip },
+    { url: 'https://api.seeip.org/jsonip',        parse: d => d.ip },
+  ];
+  for (const src of sources) {
+    try {
+      const res = await fetchWithTimeout(src.url, 3000);
+      const data = await res.json();
+      const ip = src.parse(data);
+      if (ip && ip !== 'unknown') return ip;
+    } catch {}
+  }
+  try {
+    const res = await fetchWithTimeout('https://api.ipify.org', 3000);
+    const ip = (await res.text()).trim();
+    if (ip) return ip;
+  } catch {}
+  return 'unknown';
+}
+
+
+
+// =====================================================
+// 차단 여부 확인 (blocked_ips 테이블에 IP/기기ID 둘 다 저장)
+// =====================================================
+async function isBlocked(ip, deviceId) {
+  try {
+    // ip=in.(값1,값2) → IP 또는 device_id 어느 하나라도 등록돼있으면 차단
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/blocked_ips?ip=in.(${encodeURIComponent(ip)},${encodeURIComponent(deviceId)})&select=ip`,
+      { headers }
+    );
+    const data = await res.json();
+    return Array.isArray(data) && data.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+// =====================================================
+// 방문 기록 (device_id는 user_agent 뒤에 붙임)
+// =====================================================
+async function logVisit(ip, deviceId) {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/visitor_logs`, {
+      method: 'POST',
+      headers: { ...headers, 'Prefer': 'return=minimal' },
+      body: JSON.stringify({
+        ip,
+        user_agent: `${navigator.userAgent} || dev:${deviceId}`,
+      }),
+    });
+  } catch (e) {
+    console.warn('방문 로그 실패:', e);
+  }
+}
+
+// =====================================================
+// 개인정보 동의 처리
+// =====================================================
+function hasConsent() {
+  try { return localStorage.getItem(CONSENT_KEY) === 'agreed'; }
+  catch { return false; }
+}
+
+function saveConsent() {
+  try { localStorage.setItem(CONSENT_KEY, 'agreed'); } catch {}
+}
+
+function showRejectScreen() {
+  const overlay  = document.getElementById('consentOverlay');
+  const blocked  = document.getElementById('blockedScreen');
+  document.getElementById('blockedBadge').textContent = '동의 거부됨';
+  document.getElementById('blockedTitle').innerHTML =
+    '<span class="studio">aoao</span> studio<br>이용이 제한되었습니다';
+  document.getElementById('blockedDesc').innerHTML =
+    '개인정보 수집에 동의하지 않아<br>서비스를 이용하실 수 없습니다.<br>' +
+    '다시 이용을 원하실 경우 새로고침 해주세요.';
+  overlay.classList.remove('show');
+  document.getElementById('mainWrap').style.display = 'none';
+  blocked.classList.add('show');
+}
+
+function setupConsent() {
+  return new Promise((resolve) => {
+    if (hasConsent()) {
+      resolve(true);
+      return;
+    }
+
+    const overlay = document.getElementById('consentOverlay');
+    const check   = document.getElementById('consentCheck');
+    const accept  = document.getElementById('consentAccept');
+    const reject  = document.getElementById('consentReject');
+
+    let checked = false;
+
+    overlay.classList.add('show');
+
+    check.addEventListener('click', () => {
+      checked = !checked;
+      check.classList.toggle('checked', checked);
+      accept.disabled = !checked;
+    });
+
+    accept.addEventListener('click', () => {
+      if (!checked) return;
+      saveConsent();
+      overlay.classList.remove('show');
+      setTimeout(() => resolve(true), 300);
+    });
+
+    reject.addEventListener('click', () => {
+      showRejectScreen();
+      // resolve 호출 안함 → 흐름 중단
+    });
+  });
+}
+
+// =====================================================
+// 메인 흐름
+// =====================================================
+function goMain() {
+  document.body.classList.add('out');
+  setTimeout(() => { window.location.href = REDIRECT_TO; }, 500);
+}
+
+async function init() {
+  // 1단계: 개인정보 동의 먼저
+  const agreed = await setupConsent();
+  if (!agreed) return;
+
+  // 2단계: IP + 기기 ID 병렬 추출
+  const [ip, deviceId] = await Promise.all([
+    getIP(),
+    getDeviceFingerprint(),
+  ]);
+
+  // 3단계: 차단 여부 확인 (IP, 기기 ID 한 큐에)
+  if (await isBlocked(ip, deviceId)) {
+    document.getElementById('mainWrap').style.display = 'none';
+    document.getElementById('blockedScreen').classList.add('show');
+    return;
+  }
+
+  // 4단계: 방문 기록
+  logVisit(ip, deviceId);
+
+  // 5단계: 프로그레스 바 시작
+  const fill = document.getElementById('progressFill');
+  fill.style.transition = 'width 6s cubic-bezier(.4,0,.2,1)';
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => { fill.style.width = '100%'; });
+  });
+
+  setTimeout(goMain, 6000);
+}
+
+// =====================================================
+// 캔버스 애니메이션 (기존 그대로)
+// =====================================================
+const cvs = document.getElementById('c');
+const ctx = cvs.getContext('2d');
+let W, H;
+
+function resize() {
+  W = cvs.width  = window.innerWidth;
+  H = cvs.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const BLUE  = '37,99,235';
+const SLATE = '148,163,184';
+const GRID  = 80;
+
+function makeTri() {
+  const s = 30 + Math.random() * 110;
+  return {
+    x: Math.random() * (W || 1200),
+    y: Math.random() * (H || 800),
+    s,
+    rot: Math.random() * Math.PI * 2,
+    vr: (Math.random() - .5) * .004,
+    vx: (Math.random() - .5) * .22,
+    vy: (Math.random() - .5) * .22,
+    alpha: .06 + Math.random() * .1,
+    filled: Math.random() > .55,
+    col: Math.random() > .5 ? BLUE : SLATE,
+  };
+}
+
+const tris  = Array.from({ length: 20 }, makeTri);
+const rings = Array.from({ length: 5 }, (_, i) => ({
+  cx: (W || 1200) * (.15 + i * .18),
+  cy: (H || 800)  * (.25 + (i % 2) * .4),
+  r: 36 + i * 26,
+  speed: .003 + i * .0014,
+  angle: (i / 5) * Math.PI * 2,
+  alpha: .09 + i * .01,
+  col: i % 2 === 0 ? BLUE : SLATE,
+}));
+const dlines = Array.from({ length: 10 }, (_, i) => ({
+  y: ((H || 800) / 10) * i,
+  vy: .12 + Math.random() * .18,
+  alpha: .04 + Math.random() * .04,
+  col: Math.random() > .5 ? BLUE : SLATE,
+}));
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  ctx.lineWidth = .5;
+  ctx.strokeStyle = `rgba(${SLATE},0.15)`;
+  for (let x = 0; x < W; x += GRID) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = 0; y < H; y += GRID) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  dlines.forEach(dl => {
+    dl.y += dl.vy;
+    if (dl.y > H + 80) dl.y = -80;
+    ctx.save();
+    ctx.strokeStyle = `rgba(${dl.col},${dl.alpha})`;
+    ctx.lineWidth = .6;
+    ctx.beginPath();
+    ctx.moveTo(0, dl.y);
+    ctx.lineTo(W, dl.y - 140);
+    ctx.stroke();
+    ctx.restore();
+  });
+
+  rings.forEach(rg => {
+    rg.angle += rg.speed;
+    const px = rg.cx + Math.cos(rg.angle) * rg.r;
+    const py = rg.cy + Math.sin(rg.angle) * rg.r;
+    ctx.beginPath();
+    ctx.arc(rg.cx, rg.cy, rg.r, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(${rg.col},${rg.alpha * .5})`;
+    ctx.lineWidth = .6;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${rg.col},${rg.alpha * 2.5})`;
+    ctx.fill();
+  });
+
+  tris.forEach(tr => {
+    tr.rot += tr.vr;
+    tr.x   += tr.vx;
+    tr.y   += tr.vy;
+    if (tr.x < -200) tr.x = W + 200;
+    if (tr.x > W+200) tr.x = -200;
+    if (tr.y < -200) tr.y = H + 200;
+    if (tr.y > H+200) tr.y = -200;
+
+    const h = tr.s * Math.sqrt(3) / 2;
+    ctx.save();
+    ctx.translate(tr.x, tr.y);
+    ctx.rotate(tr.rot);
+    ctx.beginPath();
+    ctx.moveTo(0, -h * .67);
+    ctx.lineTo( tr.s / 2,  h * .33);
+    ctx.lineTo(-tr.s / 2,  h * .33);
+    ctx.closePath();
+    if (tr.filled) {
+      ctx.fillStyle = `rgba(${tr.col},${tr.alpha * .3})`;
+      ctx.fill();
+    }
+    ctx.strokeStyle = `rgba(${tr.col},${tr.alpha})`;
+    ctx.lineWidth = .8;
+    ctx.stroke();
+    ctx.restore();
+  });
+
+  requestAnimationFrame(draw);
+}
+
+draw();
+init();
+</script>
+</body>
+</html>
