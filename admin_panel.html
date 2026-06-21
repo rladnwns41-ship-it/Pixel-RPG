@@ -231,8 +231,32 @@ body {
   display: block; margin-bottom: 4px;
 }
 .login-banner .game-ver {
-  font-size: 8px; color: #3a4070;
+  font-size: 8px; color: #FFD24A;
 }
+
+.season-banner {
+  margin: 14px 0 4px;
+  border: 2px solid #FFD24A;
+  background: linear-gradient(135deg, rgba(255,210,74,0.12), rgba(120,80,255,0.10));
+  padding: 10px 12px;
+  display: flex; align-items: center; gap: 10px;
+  box-shadow: 3px 3px 0 #000;
+}
+.season-tag {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px; color: #0c1028;
+  background: #FFD24A; padding: 6px 7px;
+  letter-spacing: 0.5px; white-space: nowrap;
+  text-shadow: none;
+}
+.season-lines {
+  display: flex; flex-direction: column; gap: 5px;
+}
+.season-lines span {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px; color: #e8ddb0; line-height: 1.5;
+}
+.season-lines span:first-child { color: #FFE680; }
 
 .login-box {
   position: relative;
@@ -1047,7 +1071,15 @@ canvas#gameCanvas {
     <div class="login-banner">
       <span class="game-logo">⚔️ Medieval Realm</span>
       <span class="game-sub">Online Pixel MMORPG</span>
-      <span class="game-ver">v9.0 — 회원가입 &amp; 유저 DB 저장</span>
+      <span class="game-ver">SEASON 1 · 정식 오픈</span>
+    </div>
+
+    <div class="season-banner">
+      <div class="season-tag">NEW SEASON</div>
+      <div class="season-lines">
+        <span>새 시즌 오픈 — 모두 같은 출발선</span>
+        <span>신규 무기 · 새로운 던전 추가</span>
+      </div>
     </div>
 
     <div class="login-box">
@@ -2098,7 +2130,42 @@ let _netReady = false;
         return await _fbRegister(user_id, nickname, password);
       } catch (e) { return await _fbRegister(user_id, nickname, password); }
     };
-    console.log('✅ s.js 권위 서버 연결됨 — 로그인/가입 서버 경유');
+    // 🔐 저장도 s.js 경유 — 서버가 골드/XP/인벤 변화량 검증 후 진짜 값 반환 → 클라 동기화(조작 교정)
+    const _fbSave = supabase.savePlayer.bind(supabase);
+    supabase.savePlayer = async function(user_id, p) {
+      if (!NET.ready || !NET.token) return await _fbSave(user_id, p);
+      try {
+        const r = await NET.call('save', { data: {
+          last_x: Math.round(p.x), last_y: Math.round(p.y), hp: p.hp, mp: p.mp, max_hp: p.maxHp, max_mp: p.maxMp,
+          atk: p.atk, def_stat: p.def, skill_points: p.skillPoints, max_xp: p.maxXp,
+          gold: p.gold, xp: p.xp, level: p.level, kills: (typeof myKills !== 'undefined' ? myKills : 0),
+          hunger: (typeof playerHunger !== 'undefined' ? Math.round(playerHunger) : 0),
+          inventory: JSON.stringify(p.inventory || []),
+          hotbar: JSON.stringify(p.hotbar || []),
+          equipment: JSON.stringify(p.equipment || {}),
+          skills: JSON.stringify(p.skills || {}),
+          costume: JSON.stringify(p.costume || {}),
+          hair_unlocked: JSON.stringify(p.hair_unlocked || [0]),
+          outfit_unlocked: JSON.stringify(p.outfit_unlocked || [0]),
+          accessory_unlocked: JSON.stringify(p.accessory_unlocked || [0]),
+          farm_plots: JSON.stringify((typeof farmPlots !== 'undefined' ? farmPlots : []) || []),
+          dungeon_cleared: JSON.stringify((typeof dungeonBuildings !== 'undefined' ? dungeonBuildings.filter(d=>d.cleared).map(d=>d.defIdx) : [])),
+          last_login: new Date().toISOString(),
+          team_id: (typeof myTeam !== 'undefined' && myTeam) ? myTeam.id : null,
+          bio: localStorage.getItem('bio_' + p.name) || ''
+        }});
+        if (r && r.ok) {
+          // 서버 권위 값으로 교정 (조작된 골드/아이템은 여기서 원래대로 돌아옴)
+          if (typeof r.gold === 'number') p.gold = r.gold;
+          if (typeof r.xp === 'number') p.xp = r.xp;
+          if (typeof r.level === 'number') p.level = r.level;
+          if (r.inventory) { try { const inv = JSON.parse(r.inventory); if (Array.isArray(inv)) p.inventory = inv; } catch (e) {} }
+          return;
+        }
+        return await _fbSave(user_id, p);
+      } catch (e) { return await _fbSave(user_id, p); }
+    };
+    console.log('✅ s.js 권위 서버 연결됨 — 로그인/가입/저장 서버 경유(골드/아이템 검증)');
   } catch (e) { console.warn('NET boot 실패(폴백):', e); }
 })();
 
