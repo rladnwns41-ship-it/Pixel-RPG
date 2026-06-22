@@ -14693,10 +14693,15 @@ function showQuitConfirm() {
     emergencySavePlayer();
     if (!isOffline && supabase && player && currentUserId) {
       try { await supabase.savePlayer(currentUserId, player); } catch(e) {}
-      // ⚠️ 재입장 시 stale 스냅샷으로 덮어써 아이템이 사라지는 문제 방지 → DB에서 최신 데이터 다시 읽기
+      // ⚠️ 재입장 시 최신 데이터 다시 읽기 — s.js 연결 시 서버에서, 아니면 Firebase에서
       try {
-        const snap = await supabase.db.ref(`users/${currentUserId}`).once('value');
-        if (snap.exists()) _pendingUserData = snap.val();
+        if (typeof NET !== 'undefined' && NET.ready && NET.token) {
+          const r = await NET.call('load', {});
+          if (r && r.user) _pendingUserData = r.user;
+        } else {
+          const snap = await supabase.db.ref(`users/${currentUserId}`).once('value');
+          if (snap.exists()) _pendingUserData = snap.val();
+        }
       } catch(e) {}
     }
     // 게임 상태 초기화
