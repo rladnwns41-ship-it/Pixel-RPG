@@ -2202,10 +2202,22 @@ window.showBanScreen = showBanScreen;
       } catch (e) { return await _fbSave(user_id, p); }
     };
     console.log('✅ s.js 권위 서버 연결됨 — 로그인/가입/저장 서버 경유(골드/아이템 검증)');
+    // 👑 관리자: 서버 경유 지급 (롤백 안 됨). 관리자 아이디는 s.js ADMIN_IDS 환경변수로 제어
+    window.adminGiveGold = async (target, amount) => { try { const r = await NET.call('admin_give', { target, kind: 'gold', value: amount }); console.log('골드 지급:', r); return r; } catch (e) { return { error: String(e) }; } };
+    window.adminGiveItem = async (target, itemId, count) => { try { const r = await NET.call('admin_give', { target, kind: 'item', value: itemId, count: count || 1 }); console.log('아이템 지급:', r); return r; } catch (e) { return { error: String(e) }; } };
+    window.adminSetLevel = async (target, level) => { try { const r = await NET.call('admin_give', { target, kind: 'level', value: level }); console.log('레벨 설정:', r); return r; } catch (e) { return { error: String(e) }; } };
+    window.adminSearchItems = async (q) => { try { const r = await NET.call('admin_search', { q }); console.log('검색:', r.items); return r.items; } catch (e) { return []; } };
+    window.adminSeasonReset = async () => { if (!confirm('정말 시즌을 초기화합니까? 모든 유저/맵 데이터가 삭제됩니다!')) return; const r = await NET.call('season_reset', {}); console.log('시즌 초기화:', r); return r; };
     // 실시간 수신: s.js 중계 → 기존 onMessage 디스패처로 전달
     NET.onRelay(function(event, payload, from) {
+      if (event === 'season_reset') {
+        try { if (typeof addChatMessage === 'function') addChatMessage('시스템', (payload && payload.msg) || '새 시즌 초기화 중…', '#FFD24A'); } catch (e) {}
+        try { localStorage.removeItem('mr_backup_' + (player && player.name)); } catch (e) {}
+        setTimeout(() => { alert('⚔️ 새 시즌이 시작됩니다!\n모든 데이터가 초기화되었습니다. 다시 접속해주세요.'); location.reload(); }, 2500);
+        return;
+      }
       if (!supabase || !supabase.onMessage) return;
-      if (payload && payload.id && payload.id === (player && player.name)) return; // 내가 보눌 건 무시
+      if (payload && payload.id && payload.id === (player && player.name)) return; // 내가 보낸 건 무시
       supabase.onMessage({ event: 'broadcast', payload: { event, payload } });
     });
     // 입장은 로그인 성공 시(토큰 발급 후)에 호출됨
