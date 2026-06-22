@@ -311,6 +311,7 @@ wss.on('connection', (ws) => {
         case 'register': return reply(await handleRegister(m));
         case 'login': { const r = await handleLogin(m); if (r.ok) sess.user_id = r.user.user_id; return reply(r); }
         case 'save': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); if (!rateOk(u, 'save', 10, 5000)) return reply({ error: 'rate' }); return reply(await handleSave(u, m.data || {})); }
+        case 'load': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); const usr = await getUser(u); if (!usr) return reply({ error: 'no_user' }); const { pw_hash, ...safe } = usr; return reply({ ok: true, user: safe }); }
         case 'tile': { const u = auth(); if (!u) return; await actTile(u, m.wid, m.changes); relay(ws, 'tile_changes', { changes: m.changes }); return; }
         case 'join': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); sess.user_id = u; joinRoom(ws, safeStr(m.room, 40) || 'official'); return reply({ ok: true }); }
         case 'broadcast': { if (!sess.user_id) return; relay(ws, safeStr(m.event, 40), m.payload); return; }
