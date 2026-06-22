@@ -6,6 +6,9 @@
 (function(){
   'use strict';
 
+  /* -- 🔧 테스트 모드: URL에 ?debug=1 이면 보안 차단 전체 해제 (본인 점검용) -- */
+  if (location.search.indexOf('debug=1') >= 0) { try { console.log('%c🔓 DEBUG 모드 — 보안 차단 해제됨 (F12/콘솔 사용 가능)', 'color:#0cf;font-weight:bold'); } catch(e){} return; }
+
   /* -- 1. 콘솔 메서드 전부 막기 -- */
   const _noop=function(){};
   ['log','warn','error','info','debug','table','dir','dirxml','trace',
@@ -235,28 +238,59 @@ body {
 }
 
 .season-banner {
-  margin: 14px 0 4px;
-  border: 2px solid #FFD24A;
-  background: linear-gradient(135deg, rgba(255,210,74,0.12), rgba(120,80,255,0.10));
-  padding: 10px 12px;
-  display: flex; align-items: center; gap: 10px;
-  box-shadow: 3px 3px 0 #000;
+  position: relative;
+  margin: 18px auto 8px;
+  max-width: 340px;
+  padding: 20px 18px 16px;
+  text-align: center;
+  background:
+    repeating-linear-gradient(0deg, rgba(255,210,74,0.04) 0 2px, transparent 2px 4px),
+    linear-gradient(180deg, #14152c, #0d0e1f);
+  /* 픽셀 계단형 테두리 (굴짓 코너) */
+  border: 3px solid #FFD24A;
+  box-shadow:
+    0 0 0 2px #0d0e1f,
+    0 0 0 5px #6a5418,
+    0 4px 0 5px rgba(0,0,0,0.5),
+    inset 0 0 0 1px rgba(255,210,74,0.25);
+  image-rendering: pixelated;
 }
-.season-tag {
+/* 픽셀 모서리 장식 (네 꿈) */
+.season-banner::before, .season-banner::after {
+  content: ''; position: absolute; width: 6px; height: 6px; background: #FFD24A;
+}
+.season-banner::before { top: -3px; left: -3px; box-shadow: 332px 0 0 #FFD24A; }
+.season-banner::after  { bottom: -3px; left: -3px; box-shadow: 332px 0 0 #FFD24A; }
+
+.season-badge {
+  display: inline-block;
   font-family: 'Press Start 2P', monospace;
-  font-size: 8px; color: #0c1028;
-  background: #FFD24A; padding: 6px 7px;
-  letter-spacing: 0.5px; white-space: nowrap;
+  font-size: 9px; letter-spacing: 2px;
+  color: #1a1205; background: #FFD24A;
+  padding: 7px 14px; margin-bottom: 12px;
+  box-shadow: 3px 3px 0 #7a5e16, 0 0 12px rgba(255,210,74,0.4);
   text-shadow: none;
 }
-.season-lines {
-  display: flex; flex-direction: column; gap: 5px;
-}
-.season-lines span {
+.season-title {
   font-family: 'Press Start 2P', monospace;
-  font-size: 7px; color: #e8ddb0; line-height: 1.5;
+  font-size: 17px; letter-spacing: 2px;
+  color: #FFE680;
+  margin-bottom: 14px;
+  text-shadow: 2px 2px 0 #7a5e16, 0 0 14px rgba(255,210,74,0.45);
 }
-.season-lines span:first-child { color: #FFE680; }
+.season-feats {
+  display: flex; flex-direction: column; gap: 8px;
+  align-items: flex-start; width: fit-content; margin: 0 auto;
+}
+.season-feats span {
+  display: flex; align-items: center; gap: 8px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px; color: #c8ccea; line-height: 1.4;
+}
+.sf-dot {
+  width: 6px; height: 6px; background: #FFD24A; flex-shrink: 0;
+  box-shadow: 0 0 6px rgba(255,210,74,0.6);
+}
 
 .login-box {
   position: relative;
@@ -1075,10 +1109,11 @@ canvas#gameCanvas {
     </div>
 
     <div class="season-banner">
-      <div class="season-tag">NEW SEASON</div>
-      <div class="season-lines">
-        <span>새 시즌 오픈 — 모두 같은 출발선</span>
-        <span>신규 무기 · 새로운 던전 추가</span>
+      <div class="season-badge">NEW SEASON</div>
+      <div class="season-title">SEASON&nbsp;1</div>
+      <div class="season-feats">
+        <span><i class="sf-dot"></i>새 시즌 오픈 · 모두 같은 출발선</span>
+        <span><i class="sf-dot"></i>신규 무기 · 새로운 던전 추가</span>
       </div>
     </div>
 
@@ -1553,8 +1588,12 @@ class FirebaseClient {
     } catch(e) {}
   }
 
-  // ── broadcast: Firebase에 쓰기 (키=이벤트 이름, 덮어쓰기) ──
+  // ── broadcast: s.js(WebSocket) 우선, 없으면 Firebase 폴백 ──
   broadcast(event, payload) {
+    // 🔐 s.js 연결 시 실시간은 서버 중계로 (Firebase 직접 쓰기 제거 → 위조/도배 차단)
+    if (typeof NET !== 'undefined' && NET.ready && NET.token) {
+      try { NET.ws.send(JSON.stringify({ t: 'broadcast', token: NET.token, event, payload })); return; } catch (e) {}
+    }
     const ch = this._channelId;
     const myId = payload?.id || payload?.name || ('u' + Math.random().toString(36).slice(2,8));
     this.db.ref(`channels/${ch}/broadcast/${event}_${myId}`).set({
@@ -2106,6 +2145,26 @@ try {
 
 // ── 🔐 s.js 권위 서버 연결 (있으면 로그인/가입을 서버 경유, 없으면 Firebase 폴백) ──
 let _netReady = false;
+// ⛔ 정지 경고창 (해제 불가 — Firebase에서만 풀림)
+function showBanScreen(reason, email) {
+  try { if (typeof _gameLoopRafId !== 'undefined' && _gameLoopRafId) { cancelAnimationFrame(_gameLoopRafId); _gameLoopRafId = null; } } catch (e) {}
+  const old = document.getElementById('banOverlay'); if (old) old.remove();
+  const d = document.createElement('div');
+  d.id = 'banOverlay';
+  d.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#0a0410;display:flex;align-items:center;justify-content:center;font-family:\'Press Start 2P\',monospace;';
+  d.innerHTML =
+    '<div style="max-width:520px;text-align:center;padding:34px;border:3px solid #ff3b3b;background:linear-gradient(160deg,#1a0a12,#0c0610);box-shadow:0 0 40px rgba(255,59,59,0.3);">' +
+    '<div style="font-size:40px;margin-bottom:18px;">⛔</div>' +
+    '<div style="font-size:15px;color:#ff5b5b;margin-bottom:18px;line-height:1.5;">이상 행동이 감지되어<br>계정이 정지되었습니다</div>' +
+    (reason ? '<div style="font-size:8px;color:#aa8;margin-bottom:16px;line-height:1.6;">사유: ' + String(reason).slice(0,120) + '</div>' : '') +
+    '<div style="font-size:9px;color:#c8d0ff;line-height:1.9;">이의 신청은 아래 메일로<br><span style="color:#ffd24a;">' + (email || 'rladnwns54@gmail.com') + '</span></div>' +
+    '<div style="font-size:7px;color:#665;margin-top:20px;">이 창은 닫을 수 없습니다</div>' +
+    '</div>';
+  document.body.appendChild(d);
+  // 게임 입력 차단
+  try { document.getElementById('gameContainer').style.display = 'none'; } catch (e) {}
+}
+window.showBanScreen = showBanScreen;
 (async function bootNet() {
   try {
     if (typeof NET === 'undefined') return;          // net-client.js 미로드 → 폴백
@@ -2117,7 +2176,8 @@ let _netReady = false;
     supabase.login = async function(user_id, password) {
       try {
         const r = await NET.call('login', { user_id, password });
-        if (r && r.ok) { NET.token = r.token; return { user: r.user }; }
+        if (r && r.banned) { showBanScreen(r.reason, r.email); return { error: '정지된 계정입니다' }; }
+        if (r && r.ok) { NET.token = r.token; try { NET.call('join', { room: 'official' }); } catch (e) {} return { user: r.user }; }
         if (r && r.error) return { error: r.error };
         return await _fbLogin(user_id, password);
       } catch (e) { return await _fbLogin(user_id, password); }   // 서버 응답없음 → Firebase
@@ -2162,10 +2222,18 @@ let _netReady = false;
           if (r.inventory) { try { const inv = JSON.parse(r.inventory); if (Array.isArray(inv)) p.inventory = inv; } catch (e) {} }
           return;
         }
+        if (r && r.banned) { showBanScreen(r.reason, r.email); return; }
         return await _fbSave(user_id, p);
       } catch (e) { return await _fbSave(user_id, p); }
     };
     console.log('✅ s.js 권위 서버 연결됨 — 로그인/가입/저장 서버 경유(골드/아이템 검증)');
+    // 실시간 수신: s.js 중계 → 기존 onMessage 디스패처로 전달
+    NET.onRelay(function(event, payload, from) {
+      if (!supabase || !supabase.onMessage) return;
+      if (payload && payload.id && payload.id === (player && player.name)) return; // 내가 보눌 건 무시
+      supabase.onMessage({ event: 'broadcast', payload: { event, payload } });
+    });
+    // 입장은 로그인 성공 시(토큰 발급 후)에 호출됨
   } catch (e) { console.warn('NET boot 실패(폴백):', e); }
 })();
 
@@ -3886,6 +3954,36 @@ function initSprites() {
       SpriteCache.animals[id] = makeGenericAnimal2(body, head, size, mark);
     }
   });
+
+  // 🟡 모든 동물 스프라이트를 둥글둥글하게 — 외곽 모서리 픽셀을 깎아 각진 느낌 제거
+  for (const id in SpriteCache.animals) {
+    try { softenSprite(SpriteCache.animals[id]); } catch (e) {}
+  }
+}
+
+// 외곽 코너 깎기: 불투명 픽셀인데 직각 두 이웃이 비어있으면(날카로운 코너) 반투명 처리 → 라운드 실루엣
+function softenSprite(canvas) {
+  if (!canvas || !canvas.getContext) return;
+  const w = canvas.width, h = canvas.height;
+  const cx = canvas.getContext('2d');
+  let img; try { img = cx.getImageData(0, 0, w, h); } catch (e) { return; }
+  const d = img.data;
+  const A = (x, y) => (x < 0 || y < 0 || x >= w || y >= h) ? 0 : d[(y * w + x) * 4 + 3];
+  const corners = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      if (d[i + 3] < 200) continue;
+      const up = A(x, y - 1) > 60, dn = A(x, y + 1) > 60, lf = A(x - 1, y) > 60, rt = A(x + 1, y) > 60;
+      const empty = (up ? 0 : 1) + (dn ? 0 : 1) + (lf ? 0 : 1) + (rt ? 0 : 1);
+      if (empty >= 3) { corners.push(i); }
+      else if (empty >= 2 && ((!up && !lf && dn && rt) || (!up && !rt && dn && lf) || (!dn && !lf && up && rt) || (!dn && !rt && up && lf))) {
+        corners.push(i);
+      }
+    }
+  }
+  for (const i of corners) d[i + 3] = Math.round(d[i + 3] * 0.35);
+  cx.putImageData(img, 0, 0);
 }
 
 // ===================================================================
@@ -5033,6 +5131,11 @@ const ITEMS = {
   diamond_helm: { name: '다이아 투구', icon: '💎', type: 'armor', slot: 'head', desc: '방어력 +20', def: 20 },
   shield: { name: '방패', icon: '🛡️', type: 'armor', slot: 'offhand', desc: '방어력 +10', def: 10 },
   cape: { name: '망토', icon: '🧣', type: 'armor', slot: 'back', desc: '방어력 +4', def: 4 },
+  // 🎒 가방 (장착 시 인벤토리 칸 확장 — 레벨 높을수록 더 많이)
+  bag_small: { name: '작은 가방', icon: '🎒', type: 'armor', slot: 'bag', desc: 'Lv.1 가방 · 인벤 +10칸', bagLevel: 1, stackable: false },
+  bag_medium: { name: '중형 가방', icon: '🎒', type: 'armor', slot: 'bag', desc: 'Lv.2 가방 · 인벤 +20칸', bagLevel: 2, stackable: false },
+  bag_large: { name: '큰 가방', icon: '🎒', type: 'armor', slot: 'bag', desc: 'Lv.3 가방 · 인벤 +35칸', bagLevel: 3, stackable: false },
+  bag_huge: { name: '거대한 가방', icon: '🎒', type: 'armor', slot: 'bag', desc: 'Lv.4 가방 · 인벤 +50칸', bagLevel: 4, stackable: false },
   ring_hp: { name: 'HP 반지', icon: '💍', type: 'accessory', desc: '최대 HP +20', hpBonus: 20 },
   ring_mp: { name: 'MP 반지', icon: '💍', type: 'accessory', desc: '최대 MP +15', mpBonus: 15 },
   amulet: { name: '부적', icon: '📿', type: 'accessory', desc: '행운 +5', luck: 5 },
@@ -5217,6 +5320,10 @@ const RECIPES = [
   { result: 'diamond_helm', amount: 1, ingredients: { diamond: 5, iron_ingot: 3 }, name: '다이아 투구' },
   { result: 'shield', amount: 1, ingredients: { iron_ingot: 5, wood: 3, leather: 2 }, name: '방패' },
   { result: 'cape', amount: 1, ingredients: { cloth: 5, rope: 2 }, name: '망토' },
+  { result: 'bag_small', amount: 1, ingredients: { leather: 4, rope: 2 }, name: '작은 가방' },
+  { result: 'bag_medium', amount: 1, ingredients: { leather: 8, cloth: 4, rope: 3 }, name: '중형 가방' },
+  { result: 'bag_large', amount: 1, ingredients: { leather: 14, cloth: 8, iron_ingot: 2 }, name: '큰 가방' },
+  { result: 'bag_huge', amount: 1, ingredients: { leather: 20, cloth: 14, gold_ingot: 3, diamond: 1 }, name: '거대한 가방' },
   { result: 'ring_hp', amount: 1, ingredients: { gold_ingot: 2, ruby: 1 }, name: 'HP 반지' },
   { result: 'ring_mp', amount: 1, ingredients: { gold_ingot: 2, sapphire: 1 }, name: 'MP 반지' },
   { result: 'amulet', amount: 1, ingredients: { gold_ingot: 3, emerald: 1, crystal: 1 }, name: '부적' },
@@ -10588,10 +10695,34 @@ function addToInventory(itemId, count = 1) {
   if (!itemId || !player || !player.inventory) return; // 방어
   count = Math.max(1, Math.floor(count) || 1); // NaN/undefined 방지
   const existing = player.inventory.find(i => i.id === itemId);
-  if (existing && ITEMS[itemId]?.stackable) existing.count = Math.max(1, (existing.count || 0) + count);
-  else player.inventory.push({ id: itemId, count });
+  if (existing && ITEMS[itemId]?.stackable) { existing.count = Math.max(1, (existing.count || 0) + count); _queueInvSave(); return true; }
+  // 🎒 칸 제한: 새 슬롯은 가방 용량까지만 (핫바 제외 인벤토리 슬롯 수)
+  if (player.inventory.length >= getInvCapacity()) {
+    showNotification('가방이 가득 찼습니다! 가방을 업그레이드하세요', { duration: 1800, color: '#FF8844' });
+    // 바닥에 떨구기 (잃지 않게)
+    if (typeof dropItemToWorld === 'function' && player) dropItemToWorld(itemId, count, player.x, player.y);
+    return false;
+  }
+  player.inventory.push({ id: itemId, count });
   _queueInvSave(); // 인벤 변경 → 자동 저장 (소실 방지)
+  return true;
 }
+
+// 🎒 가방 시스템: 기본 30칸 + 장착한 가방 레벨만큼 추가
+const BASE_INV_SLOTS = 30;
+const BAG_BONUS = { bag_small: 10, bag_medium: 20, bag_large: 35, bag_huge: 50 }; // 가방별 추가 칸
+function getInvCapacity() {
+  let cap = BASE_INV_SLOTS;
+  if (player && player.equipment && player.equipment.bag) cap += (BAG_BONUS[player.equipment.bag] || 0);
+  // 가방을 인벤에 가지고만 있어도 최대 개 적용 (장착 UI 없어도 동작)
+  if (player && player.inventory) {
+    let best = 0;
+    for (const it of player.inventory) if (BAG_BONUS[it.id]) best = Math.max(best, BAG_BONUS[it.id]);
+    cap = Math.max(cap, BASE_INV_SLOTS + best);
+  }
+  return cap;
+}
+window.getInvCapacity = getInvCapacity;
 
 // 인벤 변경 시 Firebase 자동 저장 (2초 디바운스 — localStorage 백업 아님)
 let _invSaveTimer = null;
@@ -11280,7 +11411,10 @@ function showInventory() {
         </div>
         <div style="font-size:8px;color:#FFD700;margin-bottom:6px;">── 핫바 (드래그로 교체 가능) ──</div>
         <div id="invHotbarRow" class="inv-hotbar-row"></div>
-        <div style="font-size:8px;color:#8890bb;margin-bottom:6px;">── 인벤토리 ──</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="font-size:8px;color:#8890bb;">── 인벤토리 ──</span>
+          <span id="invCapLabel" style="font-size:7px;color:#FFD24A;"></span>
+        </div>
         <div id="invGrid" class="inv-grid"></div>
       </div>`;
 
@@ -11327,8 +11461,12 @@ function showInventory() {
       grid.appendChild(makeSlotEl(it.id, it.count, 'inv', it.origIdx, false));
     });
 
-    // Empty slots
-    const empties = Math.max(0, 32 - invVisible.length);
+    // Empty slots — 가방 용량만큼만 표시 (나머지는 가방 업그레이드로 열림)
+    const cap = (typeof getInvCapacity === 'function') ? getInvCapacity() : 32;
+    const used = invVisible.length;
+    const empties = Math.max(0, cap - used);
+    const _capLbl = document.getElementById('invCapLabel');
+    if (_capLbl) _capLbl.textContent = used + ' / ' + cap + '칸';
     for (let i = 0; i < empties; i++) {
       const emptyEl = document.createElement('div');
       emptyEl.className = 'inv-slot';
@@ -16078,6 +16216,8 @@ window.closeAllUI = closePanel;
 
 // game-panel을 overlay로 감싸서 보여주기
 function showGamePanel(panelId) {
+  // 🚫 튜토리얼 진행 중엔 어떤 창도 못 뜨게 (겹침 방지). 튜토리얼 끝나면 정상 작동
+  if (typeof tutorialActive !== 'undefined' && tutorialActive) return;
   const panel = document.getElementById(panelId);
   if (!panel) return;
   // 기존 overlay 제거
@@ -16442,8 +16582,8 @@ function _getActionNotifContainer() {
 }
 
 function showNotification(text, opts) {
-  // 🚫 튜토리얼 진행 중엔 일반 알림 숨김 (겹침 방지). 지속성(액션) 알림은 예외
-  if (typeof tutorialActive !== 'undefined' && tutorialActive && !(opts?.persistent || opts?.id)) return;
+  // 🚫 튜토리얼 진행 중엔 어떤 알림도 안 뜨게 (겹침 완전 차단). 튜토리얼 끝나면 정상
+  if (typeof tutorialActive !== 'undefined' && tutorialActive) return;
   const isAction = opts?.persistent || opts?.id;
   const container = isAction ? _getActionNotifContainer() : _getNotifContainer();
   const notifId = opts?.id || null;
