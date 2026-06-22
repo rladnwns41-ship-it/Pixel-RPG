@@ -13,6 +13,7 @@ const crypto = require('crypto');
 const RULES = require('./server-gamedata.js');
 
 const PORT = process.env.PORT || 3000;
+const GROQ_API_KEY = process.env.GROQ_API_KEY || '';   // 없으면 휴리스틱만, 있으면 AI 판정
 let svc;
 try { svc = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}'); }
 catch (e) { console.error('❌ FIREBASE_SERVICE_ACCOUNT JSON 파싱 실패'); process.exit(1); }
@@ -37,6 +38,44 @@ function rateOk(uid, a, max, win) { const now = Date.now(); if (!RATE.has(uid)) 
 function parseInv(str) { try { const a = JSON.parse(str || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
 
 // ============================================================
+// 🤖 AI 안티치트 (Groq) — 수상한 유저를 AI가 판정 → 정지
+// ============================================================
+const BAN_EMAIL = 'rladnwns54@gmail.com';
+async function aiJudge(stats) {
+  if (!GROQ_API_KEY) return null;
+  const prompt =
+    '너는 픽셀 MMORPG 안티치트 판정관이다. 아래 플레이어 통계를 보고 핵/조작 사용이 명백한지 판단하라. ' +
+    '정상 기준: 대략 분당 골드 2000 이하, 2분당 1레벨 이하, 분당 킬 30 이하. ' +
+    '플레이시간 대비 골드/레벨/킬이 물리적으로 불가능할 때만 cheat=true. 애매하면 false. ' +
+    '반드시 JSON만 출력: {"cheat":true|false,"reason":"짧은 한국어 사유"}. ' +
+    '통계: ' + JSON.stringify(stats);
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_API_KEY },
+      body: JSON.stringify({ model: 'llama-3.1-8b-instant', temperature: 0, max_tokens: 120, messages: [{ role: 'user', content: prompt }] })
+    });
+    const j = await res.json();
+    const txt = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '';
+    const mm = txt.match(/\{[\s\S]*\}/); if (!mm) return null;
+    return JSON.parse(mm[0]);
+  } catch (e) { console.warn('groq 판정 실패:', e.message); return null; }
+}
+// 수상 휴리스틱: 플레이시간 대비 골드/레벨/킬이 과도하면 AI 검사 트리거
+function looksSuspicious(s, playSec) {
+  const m = Math.max(1, playSec / 60);
+  return (s.gold > 30000 && playSec < 1800)
+      || (s.gold / m > 4000)
+      || (s.level > 25 && playSec < 1800)
+      || (s.kills > 1500 && playSec < 1800);
+}
+// 정지 처리 (Firebase에 기록 → 해제는 Firebase 콘솔에서 banned=false 로만)
+async function banUser(uid, reason) {
+  await setUser(uid, { banned: true, ban_reason: safeStr(reason || '이상 행동 감지', 200), banned_at: Date.now() });
+  console.warn(`⛔ ${uid} 정지: ${reason}`);
+}
+
+// ============================================================
 // 인증
 // ============================================================
 async function handleRegister(m) {
@@ -48,6 +87,7 @@ async function handleRegister(m) {
     user_id: m.user_id, nickname: safeStr(m.nickname, 24) || m.user_id, pw_hash,
     level: 1, xp: 0, max_xp: 100, gold: 50, hp: 100, max_hp: 100, mp: 50, max_mp: 50,
     atk: 5, def_stat: 2, skill_points: 3,
+    play_seconds: 0, sessions: 0, banned: false,
     inventory: JSON.stringify([{ id: 'wooden_sword', count: 1 }, { id: 'pickaxe_wood', count: 1 }]),
     hotbar: '[]', equipment: '{}', skills: '{}', costume: '{}',
     hair_unlocked: '[0]', outfit_unlocked: '[0]', accessory_unlocked: '[0]',
@@ -62,6 +102,8 @@ async function handleLogin(m) {
   const u = await getUser(m.user_id);
   if (!u) return { error: '아이디 또는 비밀번호가 틀렸습니다' };
   if (!(await bcrypt.compare(String(m.password || ''), u.pw_hash || ''))) return { error: '아이디 또는 비밀번호가 틀렸습니다' };
+  if (u.banned) return { error: '정지된 계정', banned: true, reason: u.ban_reason || '이상 행동 감지', email: BAN_EMAIL };
+  await setUser(u.user_id, { sessions: (u.sessions || 0) + 1, last_login: new Date().toISOString() });
   const token = makeToken(u.user_id);
   const { pw_hash, ...safe } = u;     // 비번 해시는 절대 클라로 안 보냄
   return { ok: true, token, user: safe };
@@ -84,6 +126,7 @@ function validateInvDelta(prevStr, nextStr) {
 }
 async function handleSave(uid, d) {
   const u = await getUser(uid); if (!u) return { error: 'no_user' };
+  if (u.banned) return { banned: true, reason: u.ban_reason || '이상 행동 감지', email: BAN_EMAIL };
   const now = Date.now();
   const elapsed = Math.max(0.5, Math.min(600, (now - (u.updated || now)) / 1000));
   const set = { updated: now };
@@ -122,6 +165,14 @@ async function handleSave(uid, d) {
   // 🔒 인벤토리: 화이트리스트 + 아이템당 급증 상한
   if (typeof d.inventory === 'string') set.inventory = validateInvDelta(u.inventory, d.inventory);
 
+  // 🤖 플레이시간 누적 + AI 안티치트 (수상할 때만, 비동기 — 저장 속도 안 느려짐)
+  set.play_seconds = (u.play_seconds || 0) + Math.min(elapsed, 300);
+  if (GROQ_API_KEY && looksSuspicious(set, set.play_seconds) && rateOk(uid, 'ai', 1, 300000)) {
+    aiJudge({ gold: set.gold, level: set.level, kills: set.kills, play_minutes: Math.round(set.play_seconds / 60), sessions: u.sessions || 0 })
+      .then(v => { if (v && v.cheat) banUser(uid, v.reason); })
+      .catch(() => {});
+  }
+
   await setUser(uid, set);
   return { ok: true, gold: set.gold, xp: set.xp, level: set.level, kills: set.kills, inventory: set.inventory || u.inventory || '[]' };
 }
@@ -147,9 +198,32 @@ async function actTile(uid, wid, changes) {
 // HTTP + WebSocket
 // ============================================================
 const app = express();
-app.use(express.static(__dirname));
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'admin_panel.html')));
+
+// 🔒 보안: 저장소 루트를 통째로 서빙하지 않는다 (.git/.env/s.js 노출 방지).
+//    클라이언트에 필요한 파일만 화이트리스트로 내보낸다.
+const PUBLIC_FILES = new Set([
+  'admin_panel.html',
+  'net-client.js',
+]);
+// 클라이언트가 직접 요청할 수 있는 정적 자산 확장자 (이미지/폰트/사운드 등)
+const PUBLIC_EXT = /\.(png|jpg|jpeg|gif|webp|svg|ico|mp3|ogg|wav|woff2?|ttf|css)$/i;
+// 절대 노출 금지 (서버 코드/비밀/버전관리)
+const BLOCKED = /(^|\/)(\.git|\.env|node_modules|s\.js|server-gamedata\.js|package(-lock)?\.json|render\.yaml|\.gitignore|firebase-.*\.json|SERVER_README\.md|.*\.example)(\/|$)/i;
+
 app.get('/health', (req, res) => res.send('ok'));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'admin_panel.html')));
+
+app.get(/.*/, (req, res) => {
+  // URL 디코드 + 경로 정규화로 ../ 트래버설 차단
+  let rel;
+  try { rel = decodeURIComponent(req.path).replace(/^\/+/, ''); } catch (e) { return res.status(400).end(); }
+  const full = path.normalize(path.join(__dirname, rel));
+  if (!full.startsWith(__dirname)) return res.status(403).end();          // 경로 탈출 차단
+  if (BLOCKED.test(rel) || rel.split('/').some(seg => seg.startsWith('.'))) return res.status(404).end(); // 닷파일/금지목록 차단
+  const base = rel.split('/').pop();
+  if (PUBLIC_FILES.has(rel) || PUBLIC_EXT.test(base)) return res.sendFile(full, err => { if (err) res.status(404).end(); });
+  return res.status(404).end();
+});
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
