@@ -10,3 +10,5 @@ services:
         sync: false      # Render 대시보드에서 직접 입력 (서비스계정 JSON, 비밀)
       - key: FIREBASE_DB_URL
         sync: false      # Realtime Database URL
+      - key: GROQ_API_KEY
+        sync: false      # Groq AI 안티치트 키 (선택)
