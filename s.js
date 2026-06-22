@@ -14,6 +14,7 @@ const RULES = require('./server-gamedata.js');
 
 const PORT = process.env.PORT || 3000;
 const GROQ_API_KEY = process.env.GROQ_API_KEY || '';   // 없으면 휴리스틱만, 있으면 AI 판정
+const ADMIN_IDS = new Set((process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean)); // 관리자 아이디 목록 (쉼표구분)
 let svc;
 try { svc = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}'); }
 catch (e) { console.error('❌ FIREBASE_SERVICE_ACCOUNT JSON 파싱 실패'); process.exit(1); }
@@ -112,7 +113,7 @@ async function handleLogin(m) {
 // ============================================================
 // save — 서버가 변화량 검증 (급증 차단), 진짜 값 반환 → 클라 동기화
 // ============================================================
-const LIM = { GOLD_PS: 60, GOLD_BUF: 3000, XP_PS: 120, XP_BUF: 4000, LV_JUMP: 3, ITEM_CAP: 600, SLOTS: 500 };
+const LIM = { GOLD_PS: 60, GOLD_BUF: 3000, XP_PS: 120, XP_BUF: 4000, LV_JUMP: 3, ITEM_CAP: 200, SLOTS: 90 };
 function validateInvDelta(prevStr, nextStr) {
   const prev = {}; for (const s of parseInv(prevStr)) prev[s.id] = s.count;
   const out = [];
@@ -124,6 +125,70 @@ function validateInvDelta(prevStr, nextStr) {
   }
   return JSON.stringify(out);
 }
+// ============================================================
+// 👑 관리자 액션 (서버에서 직접 지급 → 저장 검증에 막히지 않음)
+// ============================================================
+async function actAdminGive(uid, target, kind, value, count) {
+  if (!ADMIN_IDS.has(uid)) return { error: '관리자 아님' };       // 관리자만
+  const tid = safeStr(target, 16);
+  const tu = await getUser(tid); if (!tu) return { error: '대상 없음' };
+  if (kind === 'gold') {
+    const amt = clampNum(value, -1e9, 1e9, 0);
+    tu.gold = Math.max(0, Math.min(1e9, (tu.gold || 0) + amt));
+    await setUser(tid, { gold: tu.gold });
+    return { ok: true, target: tid, gold: tu.gold };
+  }
+  if (kind === 'level') {
+    tu.level = clampNum(value, 1, 999, tu.level || 1);
+    await setUser(tid, { level: tu.level });
+    return { ok: true, target: tid, level: tu.level };
+  }
+  if (kind === 'item') {
+    const id = safeStr(value, 32);
+    if (!RULES.ITEM_IDS.has(id)) return { error: '없는 아이템: ' + id };
+    const n = Math.max(1, Math.min(9999, Math.floor(Number(count) || 1)));
+    const inv = parseInv(tu.inventory);
+    const slot = inv.find(s => s.id === id);
+    if (slot) slot.count = Math.min(99999, slot.count + n); else inv.push({ id, count: n });
+    await setUser(tid, { inventory: JSON.stringify(inv) });
+    return { ok: true, target: tid, item: id, count: n };
+  }
+  return { error: 'bad_kind' };
+}
+// 아이템 검색 (관리자 지급 UI용)
+function adminSearchItems(q) {
+  q = String(q || '').toLowerCase();
+  const out = [];
+  for (const id of RULES.ITEM_IDS) { if (!q || id.toLowerCase().includes(q)) out.push(id); if (out.length >= 40) break; }
+  return out;
+}
+
+// ============================================================
+// 🔄 시즌 초기화 (관리자 전용) — 유저/맵/사설서버 데이터 전체 삭제 + 전체 팀김
+// ============================================================
+async function actSeasonReset(uid) {
+  if (!ADMIN_IDS.has(uid)) return { error: '관리자 아님' };
+  // 전체에 알림 + 팀김 예고
+  for (const room of ROOMS.keys()) {
+    const out = JSON.stringify({ t: 'relay', event: 'season_reset', from: 'SERVER', payload: { msg: '새 시즌 초기화 중… 잠시 후 다시 접속해주세요!' } });
+    for (const ws of ROOMS.get(room)) { try { ws.send(out); } catch (e) {} }
+  }
+  // 데이터 삭제 (잠시 대기 후 — 클라가 메시지 보게)
+  await new Promise(r => setTimeout(r, 1500));
+  await rtdb.ref('users').remove().catch(() => {});
+  await rtdb.ref('map_tiles').remove().catch(() => {});
+  await rtdb.ref('chests').remove().catch(() => {});
+  await rtdb.ref('corpses').remove().catch(() => {});
+  await rtdb.ref('parked_vehicles').remove().catch(() => {});
+  await rtdb.ref('animals_state').remove().catch(() => {});
+  await rtdb.ref('map_meta').remove().catch(() => {});
+  await rtdb.ref('server_registry').remove().catch(() => {});
+  await rtdb.ref('channels').remove().catch(() => {});
+  TOKENS.clear();
+  console.warn('🔄 시즌 초기화 완료 by ' + uid);
+  return { ok: true };
+}
+
 async function handleSave(uid, d) {
   const u = await getUser(uid); if (!u) return { error: 'no_user' };
   if (u.banned) return { banned: true, reason: u.ban_reason || '이상 행동 감지', email: BAN_EMAIL };
@@ -211,6 +276,13 @@ const PUBLIC_EXT = /\.(png|jpg|jpeg|gif|webp|svg|ico|mp3|ogg|wav|woff2?|ttf|css)
 const BLOCKED = /(^|\/)(\.git|\.env|node_modules|s\.js|server-gamedata\.js|package(-lock)?\.json|render\.yaml|\.gitignore|firebase-.*\.json|SERVER_README\.md|.*\.example)(\/|$)/i;
 
 app.get('/health', (req, res) => res.send('ok'));
+// 🤖 Groq 작동 확인: /groq-test 열면 키 설정·응답 여부를 JSON으로 보여줌
+app.get('/groq-test', async (req, res) => {
+  if (!GROQ_API_KEY) return res.json({ ok: false, reason: 'GROQ_API_KEY 환경변수 없음' });
+  const v = await aiJudge({ gold: 999999999, level: 999, kills: 99999, play_minutes: 2, sessions: 1 });
+  if (v) return res.json({ ok: true, key: 'OK', sample_verdict: v });
+  return res.json({ ok: false, reason: 'Groq 응답 없음 (키 오류 또는 네트워크)' });
+});
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'admin_panel.html')));
 
 app.get(/.*/, (req, res) => {
@@ -242,6 +314,9 @@ wss.on('connection', (ws) => {
         case 'tile': { const u = auth(); if (!u) return; await actTile(u, m.wid, m.changes); relay(ws, 'tile_changes', { changes: m.changes }); return; }
         case 'join': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); sess.user_id = u; joinRoom(ws, safeStr(m.room, 40) || 'official'); return reply({ ok: true }); }
         case 'broadcast': { if (!sess.user_id) return; relay(ws, safeStr(m.event, 40), m.payload); return; }
+        case 'admin_give': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actAdminGive(u, m.target, m.kind, m.value, m.count)); }
+        case 'admin_search': { const u = auth(); if (!u || !ADMIN_IDS.has(u)) return reply({ error: 'unauthorized' }); return reply({ ok: true, items: adminSearchItems(m.q) }); }
+        case 'season_reset': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actSeasonReset(u)); }
         default: return;
       }
     } catch (e) { console.error('handler', e); return reply({ error: 'server_error' }); }
