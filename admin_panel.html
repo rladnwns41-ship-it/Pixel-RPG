@@ -238,58 +238,32 @@ body {
 }
 
 .season-banner {
-  position: relative;
-  margin: 18px auto 8px;
-  max-width: 340px;
-  padding: 20px 18px 16px;
-  text-align: center;
-  background:
-    repeating-linear-gradient(0deg, rgba(255,210,74,0.04) 0 2px, transparent 2px 4px),
-    linear-gradient(180deg, #14152c, #0d0e1f);
-  /* 픽셀 계단형 테두리 (굴짓 코너) */
-  border: 3px solid #FFD24A;
-  box-shadow:
-    0 0 0 2px #0d0e1f,
-    0 0 0 5px #6a5418,
-    0 4px 0 5px rgba(0,0,0,0.5),
-    inset 0 0 0 1px rgba(255,210,74,0.25);
-  image-rendering: pixelated;
+  margin: 10px auto 14px;
+  width: fit-content;
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 14px;
+  background: rgba(255,210,74,0.06);
+  border: 1px solid rgba(255,210,74,0.4);
+  border-radius: 2px;
 }
-/* 픽셀 모서리 장식 (네 꿈) */
-.season-banner::before, .season-banner::after {
-  content: ''; position: absolute; width: 6px; height: 6px; background: #FFD24A;
-}
-.season-banner::before { top: -3px; left: -3px; box-shadow: 332px 0 0 #FFD24A; }
-.season-banner::after  { bottom: -3px; left: -3px; box-shadow: 332px 0 0 #FFD24A; }
-
 .season-badge {
-  display: inline-block;
   font-family: 'Press Start 2P', monospace;
-  font-size: 9px; letter-spacing: 2px;
+  font-size: 7px; letter-spacing: 1px;
   color: #1a1205; background: #FFD24A;
-  padding: 7px 14px; margin-bottom: 12px;
-  box-shadow: 3px 3px 0 #7a5e16, 0 0 12px rgba(255,210,74,0.4);
-  text-shadow: none;
+  padding: 4px 7px;
+  text-shadow: none; white-space: nowrap;
 }
-.season-title {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 17px; letter-spacing: 2px;
-  color: #FFE680;
-  margin-bottom: 14px;
-  text-shadow: 2px 2px 0 #7a5e16, 0 0 14px rgba(255,210,74,0.45);
-}
+.season-title { display: none; }
 .season-feats {
-  display: flex; flex-direction: column; gap: 8px;
-  align-items: flex-start; width: fit-content; margin: 0 auto;
+  display: flex; align-items: center; gap: 10px;
 }
 .season-feats span {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 6px;
   font-family: 'Press Start 2P', monospace;
-  font-size: 7px; color: #c8ccea; line-height: 1.4;
+  font-size: 6.5px; color: #c8ccea; line-height: 1; white-space: nowrap;
 }
 .sf-dot {
-  width: 6px; height: 6px; background: #FFD24A; flex-shrink: 0;
-  box-shadow: 0 0 6px rgba(255,210,74,0.6);
+  width: 4px; height: 4px; background: #FFD24A; flex-shrink: 0;
 }
 
 .login-box {
@@ -1109,13 +1083,14 @@ canvas#gameCanvas {
     </div>
 
     <div class="season-banner">
-      <div class="season-badge">NEW SEASON</div>
-      <div class="season-title">SEASON&nbsp;1</div>
+      <span class="season-badge">NEW</span>
       <div class="season-feats">
-        <span><i class="sf-dot"></i>새 시즌 오픈 · 모두 같은 출발선</span>
-        <span><i class="sf-dot"></i>신규 무기 · 새로운 던전 추가</span>
+        <span><i class="sf-dot"></i>신규 무기</span>
+        <span><i class="sf-dot"></i>새 던전</span>
+        <span><i class="sf-dot"></i>같은 출발선</span>
       </div>
     </div>
+
 
     <div class="login-box">
       <div class="auth-tabs">
