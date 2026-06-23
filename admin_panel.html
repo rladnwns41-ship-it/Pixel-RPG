@@ -9709,6 +9709,12 @@ function killAnimal(a) {
     showNotification(shareMsg);
   }
   player.gold += goldDrop;
+  // 🔐 서버 권위: 처치 골드는 서버가 계산·지급 (클라 수치는 임시 표시)
+  if (typeof NET !== 'undefined' && NET.ready && NET.token) {
+    NET.call('kill', { mob: a.id || a.type || a.name || '_default' }).then(r => {
+      if (r && typeof r.gold === 'number') { player.gold = r.gold; if (typeof r.xp === 'number') player.xp = r.xp; }
+    }).catch(() => {});
+  }
   spawnDamageNumber(a.x, a.y - 10, `+${goldDrop}G`, '#FFD700');
   for (let i = 0; i < 10; i++) {
     particles.push({ x: a.x + 16, y: a.y + 16,
@@ -16645,6 +16651,15 @@ window.craftItem = function (idx) {
 
 window.buyItem = function (itemId, price) {
   if (player.gold < price) return;
+  // 🔐 서버 권위 구매 (연결 시) — 서버가 골드 차감·아이템 지급
+  if (typeof NET !== 'undefined' && NET.ready && NET.token) {
+    NET.call('buy', { id: itemId, count: 1 }).then(r => {
+      if (r && r.ok) { player.gold = r.gold; try { const inv = JSON.parse(r.inventory); if (Array.isArray(inv)) player.inventory = inv; } catch (e) {} buildHotbar(); showInventory && (document.getElementById('inventoryPanel') && showInventory()); }
+      else if (r && r.error === 'no_gold') showNotification('💰 골드 부족!');
+    }).catch(() => {});
+    showNotification(`🛒 ${ITEMS[itemId].name} 구매!`);
+    return;
+  }
   player.gold -= price;
   addToInventory(itemId, 1);
   showNotification(`🛒 ${ITEMS[itemId].name} 구매!`);
