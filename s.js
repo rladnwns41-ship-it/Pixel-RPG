@@ -113,7 +113,7 @@ async function handleLogin(m) {
 // ============================================================
 // save — 서버가 변화량 검증 (급증 차단), 진짜 값 반환 → 클라 동기화
 // ============================================================
-const LIM = { GOLD_PS: 60, GOLD_BUF: 3000, XP_PS: 120, XP_BUF: 4000, LV_JUMP: 3, ITEM_CAP: 200, SLOTS: 90 };
+const LIM = { GOLD_PS: 400, GOLD_BUF: 30000, XP_PS: 600, XP_BUF: 30000, LV_JUMP: 3, ITEM_CAP: 500, SLOTS: 120 };
 function validateInvDelta(prevStr, nextStr) {
   const prev = {}; for (const s of parseInv(prevStr)) prev[s.id] = s.count;
   const out = [];
@@ -279,9 +279,9 @@ async function handleSave(uid, d) {
   const reqXp = clampNum(d.xp, 0, 1e9, u.xp);
   const xpCap = (u.xp || 0) + LIM.XP_PS * elapsed + LIM.XP_BUF;
   set.xp = reqXp > xpCap ? u.xp : reqXp;
-  // 🔒 레벨: 1회 저장에 +1만 (점프 차단). 정상 레벨업은 1씩 올라감
+  // 🔒 레벨: 1회 저장에 +2까지 (연속 레벨업 허용, 점프만 차단)
   const reqLv = clampNum(d.level, 1, 999, u.level);
-  set.level = reqLv > (u.level || 1) + 1 ? (u.level || 1) : reqLv;
+  set.level = reqLv > (u.level || 1) + 2 ? (u.level || 1) : reqLv;
   // 🔒 킬: 1회 +200 이내
   const reqK = clampNum(d.kills, 0, 1e8, u.kills || 0);
   set.kills = reqK > (u.kills || 0) + 200 ? (u.kills || 0) : reqK;
