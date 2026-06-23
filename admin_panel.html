@@ -1565,10 +1565,7 @@ class FirebaseClient {
 
   // ── broadcast: s.js(WebSocket) 우선, 없으면 Firebase 폴백 ──
   broadcast(event, payload) {
-    // 🔐 s.js 연결 시 실시간은 서버 중계로 (Firebase 직접 쓰기 제거 → 위조/도배 차단)
-    if (typeof NET !== 'undefined' && NET.ready && NET.token) {
-      try { NET.ws.send(JSON.stringify({ t: 'broadcast', token: NET.token, event, payload })); return; } catch (e) {}
-    }
+    // 실시간 공유(위치·블록·드롭·총격)는 Firebase channels 직접 (빠르고 안정적, 규칙상 허용). 보안은 users 잠금으로 유지
     const ch = this._channelId;
     const myId = payload?.id || payload?.name || ('u' + Math.random().toString(36).slice(2,8));
     this.db.ref(`channels/${ch}/broadcast/${event}_${myId}`).set({
@@ -9709,12 +9706,6 @@ function killAnimal(a) {
     showNotification(shareMsg);
   }
   player.gold += goldDrop;
-  // 🔐 서버 권위: 처치 골드는 서버가 계산·지급 (클라 수치는 임시 표시)
-  if (typeof NET !== 'undefined' && NET.ready && NET.token) {
-    NET.call('kill', { mob: a.id || a.type || a.name || '_default' }).then(r => {
-      if (r && typeof r.gold === 'number') { player.gold = r.gold; if (typeof r.xp === 'number') player.xp = r.xp; }
-    }).catch(() => {});
-  }
   spawnDamageNumber(a.x, a.y - 10, `+${goldDrop}G`, '#FFD700');
   for (let i = 0; i < 10; i++) {
     particles.push({ x: a.x + 16, y: a.y + 16,
