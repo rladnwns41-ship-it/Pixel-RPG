@@ -15207,6 +15207,7 @@ let _lastDayPhaseForReport = -1;
 let _dailyReportShownToday = false;
 
 function checkDailyReportTrigger() {
+  if (typeof tutorialActive !== 'undefined' && tutorialActive) return; // 튜토리얼 중 차단
   // 자동 팝업 비활성화: 게임 시간이 벽시계 기반이라 하루(5분)마다 떠서 불편
   // → 실제 날짜가 바뀔 때 1회만, 그 외엔 J키로 수동 확인
   if (!player || !currentUserId) return;
@@ -15223,6 +15224,7 @@ function checkDailyReportTrigger() {
 
 function showDailyReport(isAutoPopup) {
   if (!player) return;
+  if (typeof tutorialActive !== 'undefined' && tutorialActive) return; // 튜토리얼 중 어떤 창도 안 뜨
   // 모달이 이미 떠있으면 닫기
   if (document.getElementById('dailyReportModal')) {
     document.getElementById('dailyReportModal').remove();
