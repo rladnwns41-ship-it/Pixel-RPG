@@ -2195,9 +2195,19 @@ window.showBanScreen = showBanScreen;
           return;
         }
         if (r && r.banned) { showBanScreen(r.reason, r.email); return; }
+        if (r && r.error === 'no_user') { showBanScreen('계정이 삭제되었습니다', 'rladnwns54@gmail.com'); return; }
         return await _fbSave(user_id, p);
       } catch (e) { return await _fbSave(user_id, p); }
     };
+    // ⛔ 정지/삭제 즉시 탐지: 15초마다 서버에 내 상태 확인 → 밴/삭제면 즉시 퓨장 (가만히 있어도)
+    setInterval(async () => {
+      if (!NET.ready || !NET.token || document.getElementById('banOverlay')) return;
+      try {
+        const r = await NET.call('load', {});
+        if (r && r.error === 'no_user') showBanScreen('계정이 삭제되었습니다', 'rladnwns54@gmail.com');
+        else if (r && r.user && r.user.banned) showBanScreen(r.user.ban_reason || '이상 행동 감지', 'rladnwns54@gmail.com');
+      } catch (e) {}
+    }, 15000);
     console.log('✅ s.js 권위 서버 연결됨 — 로그인/가입/저장 서버 경유(골드/아이템 검증)');
     // 👑 관리자: 서버 경유 지급 (롤백 안 됨). 관리자 아이디는 s.js ADMIN_IDS 환경변수로 제어
     window.srvGiveGold = async (target, amount) => { try { const r = await NET.call('admin_give', { target, kind: 'gold', value: amount }); console.log('골드 지급:', r); return r; } catch (e) { return { error: String(e) }; } };
