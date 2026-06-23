@@ -189,6 +189,52 @@ async function actSeasonReset(uid) {
   return { ok: true };
 }
 
+// ============================================================
+// 💰 서버 권위 경제 (econ) — 골드는 서버가 계산·지급. 클라는 "행동"만 보냄.
+//   처치/판매/구매 = 서버 테이블로 고정. 클라가 골드 액수를 못 정함.
+// ============================================================
+const KILL_GOLD = { chicken: 1, cow: 2, pig: 2, sheep: 2, wolf: 6, bear: 12, slime: 3, zombie: 8, skeleton: 9, spider: 5, boss: 80, _default: 4 };
+const SELL_PRICE = { _default: 1 };   // 아이템별 판매가(추후 확장). 기본 1G
+const BUY_PRICE = { _default: 10 };
+
+async function actKill(uid, mob) {
+  if (!rateOk(uid, 'kill', 25, 4000)) return { error: 'rate' };   // 4초에 25키만 인정 → 드립 차단
+  const g = KILL_GOLD[mob] != null ? KILL_GOLD[mob] : KILL_GOLD._default;
+  const xp = Math.max(2, Math.round(g * 1.3));
+  const u = await getUser(uid); if (!u) return { error: 'no_user' };
+  const gold = Math.min(1e9, (u.gold || 0) + g);
+  const nxp = (u.xp || 0) + xp;
+  await setUser(uid, { gold, xp: nxp, kills: (u.kills || 0) + 1 });
+  return { ok: true, gold, xp: nxp };
+}
+async function actSell(uid, id, count) {
+  id = safeStr(id, 32); count = Math.max(1, Math.min(9999, Math.floor(Number(count) || 1)));
+  if (!RULES.ITEM_IDS.has(id)) return { error: 'bad_item' };
+  const u = await getUser(uid); if (!u) return { error: 'no_user' };
+  const inv = parseInv(u.inventory);
+  const slot = inv.find(s => s.id === id);
+  if (!slot || slot.count < count) return { error: 'no_item' };
+  slot.count -= count; if (slot.count <= 0) inv.splice(inv.indexOf(slot), 1);
+  const price = SELL_PRICE[id] != null ? SELL_PRICE[id] : SELL_PRICE._default;
+  const gold = Math.min(1e9, (u.gold || 0) + price * count);
+  await setUser(uid, { inventory: JSON.stringify(inv), gold });
+  return { ok: true, gold, inventory: JSON.stringify(inv) };
+}
+async function actBuy(uid, id, count) {
+  id = safeStr(id, 32); count = Math.max(1, Math.min(9999, Math.floor(Number(count) || 1)));
+  if (!RULES.ITEM_IDS.has(id)) return { error: 'bad_item' };
+  const u = await getUser(uid); if (!u) return { error: 'no_user' };
+  const price = BUY_PRICE[id] != null ? BUY_PRICE[id] : BUY_PRICE._default;
+  const cost = price * count;
+  if ((u.gold || 0) < cost) return { error: 'no_gold' };
+  const inv = parseInv(u.inventory);
+  const slot = inv.find(s => s.id === id);
+  if (slot) slot.count = Math.min(99999, slot.count + count); else inv.push({ id, count });
+  const gold = (u.gold || 0) - cost;
+  await setUser(uid, { inventory: JSON.stringify(inv), gold });
+  return { ok: true, gold, inventory: JSON.stringify(inv) };
+}
+
 async function handleSave(uid, d) {
   const u = await getUser(uid); if (!u) return { error: 'no_user' };
   if (u.banned) return { banned: true, reason: u.ban_reason || '이상 행동 감지', email: BAN_EMAIL };
@@ -205,8 +251,20 @@ async function handleSave(uid, d) {
   set.def_stat = clampNum(d.def_stat, 0, 100000, u.def_stat);
   set.skill_points = clampNum(d.skill_points, 0, 100000, u.skill_points);
   set.max_xp = clampNum(d.max_xp, 0, 1e9, u.max_xp);
-  for (const f of ['hotbar', 'equipment', 'skills', 'costume', 'hair_unlocked', 'outfit_unlocked', 'accessory_unlocked', 'farm_plots', 'dungeon_cleared'])
+  for (const f of ['skills', 'costume', 'hair_unlocked', 'outfit_unlocked', 'accessory_unlocked', 'farm_plots', 'dungeon_cleared'])
     if (typeof d[f] === 'string') set[f] = safeStr(d[f], 8000);
+  // 🔒 핫바: 존재하는 아이템 id만 허용 (가짜 id 주입 차단)
+  if (typeof d.hotbar === 'string') {
+    try { const h = JSON.parse(d.hotbar); set.hotbar = JSON.stringify(Array.isArray(h) ? h.slice(0, 10).map(x => (x && RULES.ITEM_IDS.has(x) ? x : null)) : []); }
+    catch (e) { set.hotbar = u.hotbar || '[]'; }
+  }
+  // 🔒 장비: 값이 아이템 id면 화이트리스트 검증
+  if (typeof d.equipment === 'string') {
+    try { const e = JSON.parse(d.equipment); const out = {};
+      if (e && typeof e === 'object') for (const k in e) { const v = e[k]; if (v == null) continue; if (typeof v === 'string' && RULES.ITEM_IDS.has(v)) out[k] = v; else if (typeof v === 'object') out[k] = v; }
+      set.equipment = JSON.stringify(out);
+    } catch (e2) { set.equipment = u.equipment || '{}'; }
+  }
   if (typeof d.bio === 'string') set.bio = safeStr(d.bio, 500);
   if (d.last_login != null) set.last_login = safeStr(String(d.last_login), 40);
   set.team_id = (typeof d.team_id === 'string') ? safeStr(d.team_id, 64) : null;
@@ -221,9 +279,9 @@ async function handleSave(uid, d) {
   const reqXp = clampNum(d.xp, 0, 1e9, u.xp);
   const xpCap = (u.xp || 0) + LIM.XP_PS * elapsed + LIM.XP_BUF;
   set.xp = reqXp > xpCap ? u.xp : reqXp;
-  // 🔒 레벨: 1회 +3 이내
+  // 🔒 레벨: 1회 저장에 +1만 (점프 차단). 정상 레벨업은 1씩 올라감
   const reqLv = clampNum(d.level, 1, 999, u.level);
-  set.level = reqLv > (u.level || 1) + LIM.LV_JUMP ? u.level : reqLv;
+  set.level = reqLv > (u.level || 1) + 1 ? (u.level || 1) : reqLv;
   // 🔒 킬: 1회 +200 이내
   const reqK = clampNum(d.kills, 0, 1e8, u.kills || 0);
   set.kills = reqK > (u.kills || 0) + 200 ? (u.kills || 0) : reqK;
@@ -312,6 +370,9 @@ wss.on('connection', (ws) => {
         case 'login': { const r = await handleLogin(m); if (r.ok) sess.user_id = r.user.user_id; return reply(r); }
         case 'save': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); if (!rateOk(u, 'save', 10, 5000)) return reply({ error: 'rate' }); return reply(await handleSave(u, m.data || {})); }
         case 'load': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); const usr = await getUser(u); if (!usr) return reply({ error: 'no_user' }); const { pw_hash, ...safe } = usr; return reply({ ok: true, user: safe }); }
+        case 'kill': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actKill(u, safeStr(m.mob, 32))); }
+        case 'sell': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actSell(u, m.id, m.count)); }
+        case 'buy': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actBuy(u, m.id, m.count)); }
         case 'tile': { const u = auth(); if (!u) return; await actTile(u, m.wid, m.changes); relay(ws, 'tile_changes', { changes: m.changes }); return; }
         case 'join': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); sess.user_id = u; joinRoom(ws, safeStr(m.room, 40) || 'official'); return reply({ ok: true }); }
         case 'broadcast': { if (!sess.user_id) return; relay(ws, safeStr(m.event, 40), m.payload); return; }
