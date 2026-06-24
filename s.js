@@ -197,15 +197,53 @@ const KILL_GOLD = { chicken: 1, cow: 2, pig: 2, sheep: 2, wolf: 6, bear: 12, sli
 const SELL_PRICE = { _default: 1 };   // 아이템별 판매가(추후 확장). 기본 1G
 const BUY_PRICE = { _default: 10 };
 
-async function actKill(uid, mob) {
-  if (!rateOk(uid, 'kill', 25, 4000)) return { error: 'rate' };   // 4초에 25키만 인정 → 드립 차단
-  const g = KILL_GOLD[mob] != null ? KILL_GOLD[mob] : KILL_GOLD._default;
+async function actKill(uid, mob, boss) {
+  if (!rateOk(uid, 'kill', 120, 3000)) return { error: 'rate' };   // 3초에 120키 상한 (AOE/콤보 여유). 초과시만 차단
+  // 🔐 골드 금액은 서버가 결정 (클라는 몽 종류만 보냄)
+  let g = boss ? (50 + Math.floor(Math.random() * 100))
+               : ((KILL_GOLD[mob] != null ? KILL_GOLD[mob] : KILL_GOLD._default) + Math.floor(Math.random() * 4));
   const xp = Math.max(2, Math.round(g * 1.3));
+  // 동시 처치 경합 방지: 트랜잭션으로 골드 증가
+  let newGold = 0;
+  await rtdb.ref('users/' + uid + '/gold').transaction(cur => { newGold = Math.min(1e9, (cur || 0) + g); return newGold; });
+  let newXp = 0;
+  await rtdb.ref('users/' + uid + '/xp').transaction(cur => { newXp = (cur || 0) + xp; return newXp; });
+  await rtdb.ref('users/' + uid + '/kills').transaction(cur => (cur || 0) + 1);
+  return { ok: true, gold: newGold, xp: newXp, gained: g };
+}
+// 🔐 서버 권위 제작: 서버 DB의 인벤토리에 재료가 실제로 있는지 확인 → 소비 → 결과 지급 (조작 불가)
+async function actCraft(uid, result) {
+  if (!rateOk(uid, 'craft', 30, 5000)) return { error: 'rate' };
+  result = safeStr(result, 32);
+  const recipe = RULES.RECIPE_BY_RESULT[result];
+  if (!recipe) return { error: 'bad_recipe' };
   const u = await getUser(uid); if (!u) return { error: 'no_user' };
-  const gold = Math.min(1e9, (u.gold || 0) + g);
-  const nxp = (u.xp || 0) + xp;
-  await setUser(uid, { gold, xp: nxp, kills: (u.kills || 0) + 1 });
-  return { ok: true, gold, xp: nxp };
+  const inv = parseInv(u.inventory);
+  const map = {}; for (const s of inv) map[s.id] = s;
+  // 재료 보유 확인
+  for (const [mid, cnt] of Object.entries(recipe.ing || {})) {
+    if (!map[mid] || map[mid].count < cnt) return { error: 'no_mat' };
+  }
+  // 재료 소비
+  for (const [mid, cnt] of Object.entries(recipe.ing || {})) map[mid].count -= cnt;
+  const out = inv.filter(s => s.count > 0);
+  // 결과물 지급
+  const ex = out.find(s => s.id === result);
+  if (ex) ex.count = Math.min(99999, ex.count + (recipe.amount || 1));
+  else out.push({ id: result, count: recipe.amount || 1 });
+  await setUser(uid, { inventory: JSON.stringify(out) });
+  return { ok: true, inventory: JSON.stringify(out) };
+}
+// 🔐 서버 권위 소비(음식/포션): 서버 DB에 아이템이 실제로 있는지 확인 후 소비 (무한 포션 차단)
+async function actConsume(uid, id, count) {
+  id = safeStr(id, 32); count = Math.max(1, Math.min(99, Math.floor(Number(count) || 1)));
+  const u = await getUser(uid); if (!u) return { error: 'no_user' };
+  const inv = parseInv(u.inventory);
+  const slot = inv.find(s => s.id === id);
+  if (!slot || slot.count < count) return { error: 'no_item' };   // 안 가지고 있으면 거부
+  slot.count -= count; if (slot.count <= 0) inv.splice(inv.indexOf(slot), 1);
+  await setUser(uid, { inventory: JSON.stringify(inv) });
+  return { ok: true, inventory: JSON.stringify(inv) };
 }
 async function actSell(uid, id, count) {
   id = safeStr(id, 32); count = Math.max(1, Math.min(9999, Math.floor(Number(count) || 1)));
@@ -370,9 +408,11 @@ wss.on('connection', (ws) => {
         case 'login': { const r = await handleLogin(m); if (r.ok) sess.user_id = r.user.user_id; return reply(r); }
         case 'save': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); if (!rateOk(u, 'save', 10, 5000)) return reply({ error: 'rate' }); return reply(await handleSave(u, m.data || {})); }
         case 'load': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); const usr = await getUser(u); if (!usr) return reply({ error: 'no_user' }); const { pw_hash, ...safe } = usr; return reply({ ok: true, user: safe }); }
-        case 'kill': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actKill(u, safeStr(m.mob, 32))); }
+        case 'kill': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actKill(u, safeStr(m.mob, 32), !!m.boss)); }
         case 'sell': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actSell(u, m.id, m.count)); }
         case 'buy': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actBuy(u, m.id, m.count)); }
+        case 'craft': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actCraft(u, m.result)); }
+        case 'consume': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actConsume(u, m.id, m.count)); }
         case 'tile': { const u = auth(); if (!u) return; await actTile(u, m.wid, m.changes); relay(ws, 'tile_changes', { changes: m.changes }); return; }
         case 'join': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); sess.user_id = u; joinRoom(ws, safeStr(m.room, 40) || 'official'); return reply({ ok: true }); }
         case 'broadcast': { if (!sess.user_id) return; relay(ws, safeStr(m.event, 40), m.payload); return; }
