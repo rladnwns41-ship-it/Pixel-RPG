@@ -1822,6 +1822,13 @@ class FirebaseClient {
 
   // ── 관리자: 전체 유저 목록 ──
   async adminListUsers() {
+    // 🔐 users 노드가 잠겨있어 클라 직접 읽기는 권한 거부됨 → s.js 경유
+    if (typeof NET !== 'undefined' && NET.ready && NET.token) {
+      try {
+        const r = await NET.call('admin_list', {});
+        if (r && r.ok && Array.isArray(r.users)) return r.users;
+      } catch (e) {}
+    }
     try {
       const snap = await this.db.ref('users').once('value');
       const val = snap.val() || {};
