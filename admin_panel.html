@@ -16618,9 +16618,23 @@ function emergencySavePlayer() {
       _lt: {".sv": "timestamp"}
     };
     window._currentSV = sv + 1;
-    const url = `${FIREBASE_CONFIG.databaseURL}/users/${currentUserId}.json`;
-    fetch(url, { method: 'PATCH', body: JSON.stringify(body), keepalive: true,
-      headers: { 'Content-Type': 'application/json' } }).catch(() => {});
+    // 🔐 긴급 저장: 서버 검증 엔드포인트로 sendBeacon (직접 PATCH 우회 제거 — 골드/아이템 검증됨)
+    if (typeof NET !== 'undefined' && NET.ready && NET.token) {
+      const payload = JSON.stringify({ token: NET.token, data: {
+        last_x: body.last_x, last_y: body.last_y, hp: body.hp, mp: body.mp,
+        max_hp: body.max_hp, max_mp: body.max_mp, atk: body.atk, def_stat: body.def_stat,
+        skill_points: body.skill_points, max_xp: body.max_xp, gold: body.gold, xp: body.xp,
+        level: body.level, kills: body.kills, hunger: body.hunger, inventory: body.inventory,
+        hotbar: body.hotbar, equipment: body.equipment, skills: body.skills, costume: body.costume,
+        hair_unlocked: body.hair_unlocked, outfit_unlocked: body.outfit_unlocked,
+        accessory_unlocked: body.accessory_unlocked, farm_plots: body.farm_plots,
+        dungeon_cleared: body.dungeon_cleared, last_login: body.last_login, team_id: body.team_id, bio: body.bio
+      }});
+      try {
+        const ok = navigator.sendBeacon && navigator.sendBeacon(location.origin + '/save', new Blob([payload], { type: 'application/json' }));
+        if (!ok) fetch(location.origin + '/save', { method: 'POST', body: payload, keepalive: true, headers: { 'Content-Type': 'application/json' } }).catch(() => {});
+      } catch (e) {}
+    }
   } catch(e) {}
 }
 
