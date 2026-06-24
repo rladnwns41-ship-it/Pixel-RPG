@@ -1843,7 +1843,10 @@ class FirebaseClient {
       try {
         const r = await NET.call('admin_list', {});
         if (r && r.ok && Array.isArray(r.users)) return r.users;
+        if (r && r.error === 'unauthorized') { window._adminListErr = 'Render ADMIN_IDS 환경변수에 당신 아이디 등록 필요'; }
       } catch (e) {}
+    } else {
+      window._adminListErr = '서버(s.js) 미연결 — Render 배포·재시작 확인';
     }
     try {
       const snap = await this.db.ref('users').once('value');
@@ -17893,6 +17896,10 @@ async function loadAdminUsers() {
   const listEl = document.getElementById('adminUserList');
   if (listEl) listEl.innerHTML = '<div style="color:#33aa55;font-size:7px;padding:6px">로딩 중...</div>';
   _adminUsersCache = await supabase.adminListUsers();
+  if ((!_adminUsersCache || !_adminUsersCache.length) && window._adminListErr) {
+    if (listEl) listEl.innerHTML = '<div style="color:#ff7766;font-size:7px;padding:6px;line-height:1.5">⚠️ 불러오기 실패<br>' + _escapeHtml(window._adminListErr) + '</div>';
+    return;
+  }
   // 온라인 우선, 그다음 최근 로그인순
   const onlineNames = new Set([player?.name, ...Object.keys(otherPlayers), ...Object.values(otherPlayers).map(p=>p.name)].filter(Boolean));
   _adminUsersCache.sort((a, b) => {
