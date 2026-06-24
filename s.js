@@ -130,12 +130,19 @@ function validateInvDelta(prevStr, nextStr) {
 // ============================================================
 async function actAdminGive(uid, target, kind, value, count) {
   if (!ADMIN_IDS.has(uid)) return { error: '관리자 아님' };       // 관리자만
-  const tid = safeStr(target, 16);
-  const tu = await getUser(tid); if (!tu) return { error: '대상 없음' };
+  let tid = safeStr(target, 24);
+  let tu = await getUser(tid);
+  if (!tu) {                                                  // user_id로 못 찾으면 닉네임으로 검색
+    const snap = await rtdb.ref('users').get();
+    const val = snap.exists() ? snap.val() : {};
+    for (const k in val) { if ((val[k] && val[k].nickname) === target) { tid = k; tu = val[k]; break; } }
+  }
+  if (!tu) return { error: '대상 없음' };
   if (kind === 'gold') {
     const amt = clampNum(value, -1e9, 1e9, 0);
     tu.gold = Math.max(0, Math.min(1e9, (tu.gold || 0) + amt));
     await setUser(tid, { gold: tu.gold });
+    pushToUser(tid, { t: 'relay', event: 'admin_give', payload: { target: tid, gift: { gold: amt }, giftId: 'srv' + Date.now() } });
     return { ok: true, target: tid, gold: tu.gold };
   }
   if (kind === 'level') {
@@ -151,9 +158,15 @@ async function actAdminGive(uid, target, kind, value, count) {
     const slot = inv.find(s => s.id === id);
     if (slot) slot.count = Math.min(99999, slot.count + n); else inv.push({ id, count: n });
     await setUser(tid, { inventory: JSON.stringify(inv) });
+    pushToUser(tid, { t: 'relay', event: 'admin_give', payload: { target: tid, gift: { itemId: id, count: n }, giftId: 'srv' + Date.now() } });
     return { ok: true, target: tid, item: id, count: n };
   }
   return { error: 'bad_kind' };
+}
+// 특정 유저(접속 중)에게 직접 메시지 푸시 — 온라인이면 선물 즉시 적용
+function pushToUser(uid, obj) {
+  const out = JSON.stringify(obj);
+  for (const [ws, s] of SESSION) { if (s && s.user_id === uid && ws.readyState === 1) { try { ws.send(out); } catch (e) {} } }
 }
 // 아이템 검색 (관리자 지급 UI용)
 function adminSearchItems(q) {
