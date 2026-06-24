@@ -162,6 +162,18 @@ function adminSearchItems(q) {
   for (const id of RULES.ITEM_IDS) { if (!q || id.toLowerCase().includes(q)) out.push(id); if (out.length >= 40) break; }
   return out;
 }
+// 전체 유저 목록 (관리자 전용) — users가 잠겨있어 클라가 직접 못 읽으므로 서버가 대신 반환
+async function actAdminList() {
+  const snap = await rtdb.ref('users').get();
+  const val = snap.exists() ? snap.val() : {};
+  const users = [];
+  for (const uid in val) {
+    const u = val[uid] || {};
+    users.push({ user_id: uid, nickname: u.nickname || uid, level: u.level || 1, gold: u.gold || 0, kills: u.kills || 0, last_login: u.last_login || '', banned: !!u.banned });
+    if (users.length >= 500) break;
+  }
+  return { ok: true, users };
+}
 
 // ============================================================
 // 🔄 시즌 초기화 (관리자 전용) — 유저/맵/사설서버 데이터 전체 삭제 + 전체 팀김
