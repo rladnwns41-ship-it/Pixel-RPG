@@ -399,6 +399,17 @@ const PUBLIC_EXT = /\.(png|jpg|jpeg|gif|webp|svg|ico|mp3|ogg|wav|woff2?|ttf|css)
 const BLOCKED = /(^|\/)(\.git|\.env|node_modules|s\.js|server-gamedata\.js|package(-lock)?\.json|render\.yaml|\.gitignore|firebase-.*\.json|SERVER_README\.md|.*\.example)(\/|$)/i;
 
 app.get('/health', (req, res) => res.send('ok'));
+// 🔐 긴급 저장(beacon): 페이지 닫을 때 sendBeacon으로 호출. handleSave 검증을 그대로 거침 (직접 PATCH 우회 제거)
+app.post('/save', express.json({ limit: '256kb' }), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const uid = tokenUser(b.token);
+    if (!uid) return res.json({ error: 'unauthorized' });
+    if (!rateOk(uid, 'beacon', 6, 5000)) return res.json({ error: 'rate' });
+    const r = await handleSave(uid, b.data || {});
+    return res.json(r);
+  } catch (e) { return res.json({ error: 'server_error' }); }
+});
 // 🤖 Groq 작동 확인: /groq-test 열면 키 설정·응답 여부를 JSON으로 보여줌
 app.get('/groq-test', async (req, res) => {
   if (!GROQ_API_KEY) return res.json({ ok: false, reason: 'GROQ_API_KEY 환경변수 없음' });
