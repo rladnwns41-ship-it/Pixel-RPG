@@ -7995,8 +7995,37 @@ function drawParticles() {
   particles.forEach(p => {
     const sx = p.x - camera.x, sy = p.y - camera.y;
     // 화면 밖 파티클은 그리지 않음 (오버드로 제거)
-    if (sx < -20 || sx > canvas.width + 20 || sy < -20 || sy > canvas.height + 20) return;
-    ctx.globalAlpha = p.life;
+    if (sx < -40 || sx > canvas.width + 40 || sy < -40 || sy > canvas.height + 40) return;
+    const a0 = Math.max(0, Math.min(1, p.life));
+    // ✨ 특수 타격 FX
+    if (p.fx === 'ring') {
+      const prog = 1 - p.life / (p.maxLife || 1);
+      ctx.globalAlpha = a0 * 0.8;
+      ctx.strokeStyle = p.color; ctx.lineWidth = (p.lw || 3) * a0;
+      ctx.beginPath(); ctx.arc(sx, sy, (p.r0 || 4) + prog * (p.rMax || 30), 0, Math.PI * 2); ctx.stroke();
+      return;
+    }
+    if (p.fx === 'slash') {
+      ctx.globalAlpha = a0;
+      ctx.strokeStyle = p.color; ctx.lineWidth = p.lw || 3; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(sx, sy, p.r || 18, p.a1, p.a2); ctx.stroke();
+      return;
+    }
+    if (p.fx === 'spark') {
+      ctx.globalAlpha = a0;
+      ctx.strokeStyle = p.color; ctx.lineWidth = p.lw || 2; ctx.lineCap = 'round';
+      const len = p.size * 2;
+      ctx.beginPath(); ctx.moveTo(sx - (p.vx) * 1.5, sy - (p.vy) * 1.5); ctx.lineTo(sx, sy); ctx.stroke();
+      return;
+    }
+    if (p.fx === 'glow') {
+      ctx.globalAlpha = a0 * 0.7;
+      const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, p.size);
+      g.addColorStop(0, p.color); g.addColorStop(1, 'transparent');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, sy, p.size, 0, Math.PI * 2); ctx.fill();
+      return;
+    }
+    ctx.globalAlpha = a0;
     ctx.fillStyle = p.color;
     ctx.fillRect(sx, sy, p.size, p.size);
   });
@@ -8085,14 +8114,22 @@ function drawProjectiles() {
 function drawDamageNumbers() {
   particles.filter(p => p.isDamageText).forEach(p => {
     ctx.globalAlpha = Math.min(1, p.life);
-    ctx.fillStyle = '#000';
+    const age = (p.maxLife || 1.5) - p.life;
+    const pop = Math.min(1, age / 0.12);                 // 빠른 팝-인
+    const scale = (p.big ? 1.75 : 1) * (0.55 + 0.45 * pop);
+    const sx = p.x - camera.x, sy = p.y - camera.y;
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.scale(scale, scale);
     ctx.font = 'bold 10px "Press Start 2P"';
     ctx.textAlign = 'center';
-    ctx.fillText(p.text, p.x - camera.x + 1, p.y - camera.y + 1);
-    ctx.fillStyle = p.color;
-    ctx.fillText(p.text, p.x - camera.x, p.y - camera.y);
+    ctx.lineJoin = 'round'; ctx.lineWidth = 4; ctx.strokeStyle = '#000';
+    ctx.strokeText(p.text, 0, 0);
+    ctx.fillStyle = p.color; ctx.fillText(p.text, 0, 0);
+    ctx.restore();
   });
   ctx.globalAlpha = 1;
+  ctx.textAlign = 'left';
 }
 
 // ---- MINIMAP CACHE ----
@@ -9675,9 +9712,49 @@ function updateDayNight() {
 }
 
 // ---- INTERACTIONS ----
-function spawnDamageNumber(x, y, text, color) {
+function spawnDamageNumber(x, y, text, color, big) {
   particles.push({ x: x + Math.random() * 10, y: y - 10, vx: (Math.random() - 0.5) * 2,
-    vy: -3, life: 1.5, color, size: 0, text: String(text), isDamageText: true });
+    vy: -3, life: 1.5, maxLife: 1.5, color, size: 0, text: String(text), isDamageText: true, big: !!big });
+}
+
+// ⚔️ 무기별 타격감 FX — 명중 시 호출 (종류별 파티클·셋어크·데미지넘버)
+function weaponHitFx(hotItem, weapon, hx, hy, dir, dmg, isCrit) {
+  // 무기 분류
+  let cat = 'generic';
+  if (weapon && weapon.magic) cat = 'magic';
+  else if (/sword|blade|katana|saber|excal|rapier|dagger|knife/.test(hotItem || '')) cat = 'slash';
+  else if (/axe|hatchet/.test(hotItem || '')) cat = 'heavy';
+  else if (/hammer|mace|club|mallet/.test(hotItem || '')) cat = 'blunt';
+  else if (/spear|lance|trident|pike|halberd|scythe/.test(hotItem || '')) cat = 'pierce';
+  else if (/pickaxe|pick/.test(hotItem || '')) cat = 'spark';
+  // 카메라 흔들림 (데미지 비례 + 크릿 강조)
+  _camShake = Math.max(_camShake, Math.min(16, dmg * 0.35 + (isCrit ? 8 : 3)));
+  const cx = hx + 12, cy = hy + 12;
+  if (cat === 'slash') {
+    const base = dir > 0 ? -0.9 : Math.PI - 0.9;
+    particles.push({ x: cx, y: cy, vx: 0, vy: 0, life: 0.32, maxLife: 0.32, fx: 'slash', color: '#CFefff', r: 20, lw: 5, a1: base, a2: base + 1.8 });
+    particles.push({ x: cx, y: cy, vx: 0, vy: 0, life: 0.22, maxLife: 0.22, fx: 'slash', color: '#ffffff', r: 26, lw: 2, a1: base + 0.2, a2: base + 1.6 });
+    for (let i = 0; i < 6; i++) particles.push({ x: cx, y: cy, vx: dir * (2 + Math.random() * 4), vy: -2 + Math.random() * 4, life: 0.3, color: '#aef0ff', size: 2 });
+  } else if (cat === 'heavy') {
+    particles.push({ x: cx, y: cy, vx: 0, vy: 0, life: 0.3, maxLife: 0.3, fx: 'ring', color: '#FFB055', r0: 4, rMax: 34, lw: 4 });
+    for (let i = 0; i < 9; i++) particles.push({ x: cx, y: cy, vx: (Math.random() - 0.5) * 8, vy: -Math.random() * 6, life: 0.4 + Math.random() * 0.3, color: ['#ffcc66', '#ff8833', '#cc5511'][i % 3], size: Math.random() * 3 + 2 });
+  } else if (cat === 'blunt') {
+    particles.push({ x: cx, y: cy, vx: 0, vy: 0, life: 0.34, maxLife: 0.34, fx: 'ring', color: '#ffffff', r0: 3, rMax: 40, lw: 5 });
+    for (let i = 0; i < 5; i++) particles.push({ x: cx, y: cy, vx: (Math.random() - 0.5) * 5, vy: -Math.random() * 3, life: 0.3, color: '#ffeebb', size: 3 });
+  } else if (cat === 'pierce') {
+    for (let i = 0; i < 7; i++) particles.push({ x: cx, y: cy, vx: dir * (4 + Math.random() * 7), vy: (Math.random() - 0.5) * 2, life: 0.3, fx: 'spark', color: '#ffffff', size: 3, lw: 2 });
+  } else if (cat === 'spark') {
+    for (let i = 0; i < 8; i++) particles.push({ x: cx, y: cy, vx: (Math.random() - 0.5) * 9, vy: -Math.random() * 5, life: 0.25 + Math.random() * 0.2, fx: 'spark', color: ['#fff3a0', '#ffcc33', '#fff'][i % 3], size: 3, lw: 2 });
+  } else if (cat === 'magic') {
+    particles.push({ x: cx, y: cy, vx: 0, vy: 0, life: 0.4, maxLife: 0.4, fx: 'glow', color: '#aa88ff', size: 22 });
+    for (let i = 0; i < 8; i++) { const an = Math.random() * Math.PI * 2; particles.push({ x: cx, y: cy, vx: Math.cos(an) * 4, vy: Math.sin(an) * 4, life: 0.4, fx: 'glow', color: '#cc99ff', size: 6 }); }
+  } else {
+    particles.push({ x: cx, y: cy, vx: 0, vy: 0, life: 0.26, maxLife: 0.26, fx: 'ring', color: '#ffffff', r0: 3, rMax: 22, lw: 3 });
+    for (let i = 0; i < 4; i++) particles.push({ x: cx, y: cy, vx: (Math.random() - 0.5) * 5, vy: -1 - Math.random() * 2, life: 0.3, color: '#ffffff', size: 2 });
+  }
+  if (isCrit) {
+    particles.push({ x: cx, y: cy, vx: 0, vy: 0, life: 0.35, maxLife: 0.35, fx: 'ring', color: '#FFE24A', r0: 6, rMax: 44, lw: 3 });
+  }
 }
 
 function killAnimal(a) {
@@ -10292,15 +10369,13 @@ function attack(forceAttack) {
             }
           }
         }
-        const dmg = Math.max(1, Math.floor((atkDmg - (a.def || 0)) * dmgMult));
-        a.currentHp -= dmg; a.hit = true; a.hitTimer = 10; a.vx = player.dir * 3;
-        spawnDamageNumber(a.x, a.y, dmg, dmgMult > 1 ? '#FF8800' : '#FFAA00');
-        // 근접 공격 파티클
-        for (let i = 0; i < 3; i++) particles.push({
-          x: a.x + Math.random()*24, y: a.y + Math.random()*24,
-          vx: (Math.random()-0.5)*4, vy: -1-Math.random()*2,
-          life: 0.3, color: '#FFFFFF', size: 2
-        });
+        const isCrit = Math.random() < 0.16;
+        let dmg = Math.max(1, Math.floor((atkDmg - (a.def || 0)) * dmgMult));
+        if (isCrit) dmg = Math.floor(dmg * 1.7);
+        a.currentHp -= dmg; a.hit = true; a.hitTimer = isCrit ? 16 : 10; a.vx = player.dir * (isCrit ? 6 : 3.5);
+        spawnDamageNumber(a.x, a.y, isCrit ? ('⚡' + dmg) : dmg, isCrit ? '#FFE24A' : (dmgMult > 1 ? '#FF8800' : '#FFAA00'), isCrit || dmg >= 30);
+        // ⚔️ 무기별 타격감 (명중 파티클·셋어크·크릿)
+        weaponHitFx(hotItem, weapon, a.x, a.y, player.dir, dmg, isCrit);
         if (a.currentHp <= 0) killAnimal(a);
         // 무기 내구도 감소
         if (hotItem && DURABILITY_MAX[hotItem] && ITEMS[hotItem]?.type === 'weapon') {
@@ -16745,6 +16820,8 @@ function useSkill(slotIndex) {
 
   const skillLevel = player.skills[skill.id] || 1;
   const dmgBonus = 1 + (skillLevel - 1) * 0.2;
+  // 💥 스킬 시전 타격감: 종류별 카메라 흔들림
+  _camShake = Math.max(_camShake, skill.id === 'meteor' ? 18 : skill.id === 'heal' ? 4 : 9);
 
   if (skill.id === 'slash') {
     // Melee AoE in front
