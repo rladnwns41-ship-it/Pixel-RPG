@@ -17805,6 +17805,14 @@ function adminGiveGold() {
     if (!isOffline && supabase && currentUserId) supabase.savePlayer(currentUserId, player);
     return;
   }
+  // 🔐 다른 유저 → s.js 경유 (users 잠겨있어 클라 직접 불가). 온라인이면 서버가 즉시 푸시
+  if (typeof NET !== 'undefined' && NET.ready && NET.token) {
+    NET.call('admin_give', { target, kind: 'gold', value: amt }).then(r => {
+      if (r && r.ok) { showNotification(`💰 ${target}에게 ${amt}G 지급! (잔고 ${r.gold})`, { duration: 3000 }); addChatMessage('관리자', `${target} 골드 +${amt}`, '#FFD24A'); }
+      else showNotification('❌ 지급 실패: ' + (r && r.error || '?'));
+    }).catch(() => showNotification('❌ 서버 오류'));
+    return;
+  }
   adminDeliverGift(target, { gold: amt }, `골드 ${amt}G`);
 }
 
@@ -17819,6 +17827,14 @@ function adminGiveItem() {
     showNotification(`🎁 본인 ${ITEMS[itemId].name} x${qty} 지급!`, { duration: 3000 });
     addChatMessage('관리자', `본인 ${ITEMS[itemId].name} x${qty}`, '#88DDFF');
     _safeSaveInventory('admin_self_item');
+    return;
+  }
+  // 🔐 다른 유저 → s.js 경유
+  if (typeof NET !== 'undefined' && NET.ready && NET.token) {
+    NET.call('admin_give', { target, kind: 'item', value: itemId, count: qty }).then(r => {
+      if (r && r.ok) { showNotification(`🎁 ${target}에게 ${ITEMS[itemId].name} x${qty} 지급!`, { duration: 3000 }); addChatMessage('관리자', `${target} ${ITEMS[itemId].name} x${qty}`, '#88DDFF'); }
+      else showNotification('❌ 지급 실패: ' + (r && r.error || '?'));
+    }).catch(() => showNotification('❌ 서버 오류'));
     return;
   }
   adminDeliverGift(target, { itemId, count: qty }, `${ITEMS[itemId].name} x${qty}`);
