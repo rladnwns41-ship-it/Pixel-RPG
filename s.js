@@ -381,6 +381,36 @@ async function actTile(uid, wid, changes) {
   }
   if (Object.keys(up).length) await rtdb.ref().update(up);
 }
+// 상자 쓰기/삭제 (구조 검증 + 레이트) — admin SDK로 Firebase에 써서 다른 클라가 읽게
+async function actChest(uid, wid, chest) {
+  if (!rateOk(uid, 'chest', 30, 5000)) return;
+  if (!chest || typeof chest.id !== 'string') return;
+  const w = safeStr(wid, 40) || 'main';
+  const items = Array.isArray(chest.items) ? chest.items.slice(0, 60).filter(it => it && RULES.ITEM_IDS.has(it.id)).map(it => ({ id: it.id, count: Math.max(1, Math.min(99999, Math.floor(Number(it.count) || 1))) })) : [];
+  await rtdb.ref(`chests/${w}/${safeStr(chest.id, 60)}`).set({
+    id: safeStr(chest.id, 60), type: safeStr(chest.type, 24), ownerName: safeStr(chest.ownerName, 24),
+    tx: Math.floor(Number(chest.tx) || 0), ty: Math.floor(Number(chest.ty) || 0), items
+  });
+}
+async function actChestDelete(uid, wid, id) {
+  if (!rateOk(uid, 'chestdel', 30, 5000)) return;
+  await rtdb.ref(`chests/${safeStr(wid, 40) || 'main'}/${safeStr(id, 60)}`).remove();
+}
+async function actCorpse(uid, wid, corpse) {
+  if (!rateOk(uid, 'corpse', 30, 5000)) return;
+  if (!corpse || typeof corpse.id !== 'string') return;
+  const w = safeStr(wid, 40) || 'main';
+  const items = Array.isArray(corpse.items) ? corpse.items.slice(0, 60).filter(it => it && RULES.ITEM_IDS.has(it.id)).map(it => ({ id: it.id, count: Math.max(1, Math.min(99999, Math.floor(Number(it.count) || 1))) })) : [];
+  await rtdb.ref(`corpses/${w}/${safeStr(corpse.id, 60)}`).set({
+    id: safeStr(corpse.id, 60), ownerName: safeStr(corpse.ownerName, 24),
+    x: Math.floor(Number(corpse.x) || 0), y: Math.floor(Number(corpse.y) || 0),
+    spawnedAt: Number(corpse.spawnedAt) || Date.now(), items
+  });
+}
+async function actCorpseDelete(uid, wid, id) {
+  if (!rateOk(uid, 'corpsedel', 30, 5000)) return;
+  await rtdb.ref(`corpses/${safeStr(wid, 40) || 'main'}/${safeStr(id, 60)}`).remove();
+}
 
 // ============================================================
 // HTTP + WebSocket
@@ -452,6 +482,10 @@ wss.on('connection', (ws) => {
         case 'craft': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actCraft(u, m.result)); }
         case 'consume': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actConsume(u, m.id, m.count)); }
         case 'tile': { const u = auth(); if (!u) return; await actTile(u, m.wid, m.changes); relay(ws, 'tile_changes', { changes: m.changes }); return; }
+        case 'chest_set': { const u = auth(); if (!u) return; await actChest(u, m.wid, m.chest); return; }
+        case 'chest_del': { const u = auth(); if (!u) return; await actChestDelete(u, m.wid, m.id); return; }
+        case 'corpse_set': { const u = auth(); if (!u) return; await actCorpse(u, m.wid, m.corpse); return; }
+        case 'corpse_del': { const u = auth(); if (!u) return; await actCorpseDelete(u, m.wid, m.id); return; }
         case 'join': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); sess.user_id = u; joinRoom(ws, safeStr(m.room, 40) || 'official'); return reply({ ok: true }); }
         case 'broadcast': { if (!sess.user_id) return; relay(ws, safeStr(m.event, 40), m.payload); return; }
         case 'admin_give': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actAdminGive(u, m.target, m.kind, m.value, m.count)); }
