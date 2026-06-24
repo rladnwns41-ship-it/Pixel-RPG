@@ -9714,19 +9714,8 @@ function killAnimal(a) {
     if (!isOffline && supabase) supabase.broadcast('team_boss_reward', { gold: goldDrop, xp: xpGain, teamId: myTeam.id });
     showNotification(`팀 보스 클리어! 보상 지급`);
   }
-  // 🔐 서버 권위: 처치 골드는 s.js가 계산·지급 (조작 불가). 연결 없으면 로컬 폴백
-  if (typeof NET !== 'undefined' && NET.ready && NET.token) {
-    NET.call('kill', { mob: a.id || a.type || a.name || (a.boss ? 'boss' : '_default'), boss: !!a.boss }).then(r => {
-      if (r && r.ok) {
-        if (typeof r.gold === 'number') player.gold = r.gold;
-        if (typeof r.xp === 'number') player.xp = r.xp;
-        spawnDamageNumber(a.x, a.y - 10, `+${r.gained != null ? r.gained : 0}G`, '#FFD700');
-      } else if (r && r.banned) { showBanScreen(r.reason, r.email || 'rladnwns54@gmail.com'); }
-    }).catch(() => {});
-  } else {
-    player.gold += goldDrop;
-    spawnDamageNumber(a.x, a.y - 10, `+${goldDrop}G`, '#FFD700');
-  }
+  player.gold += goldDrop;
+  spawnDamageNumber(a.x, a.y - 10, `+${goldDrop}G`, '#FFD700');
   for (let i = 0; i < 10; i++) {
     particles.push({ x: a.x + 16, y: a.y + 16,
       vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 1) * 4,
@@ -10624,17 +10613,10 @@ function useItem() {
       showNotification(`${item.name} 사용! MP +${item.mana}`);
     }
     if (item.buff) { player.buffs.push({ type: item.buff, remaining: item.duration }); showNotification(`✨ ${item.name} 효과 발동!`); }
-    // 🔐 서버 권위: 소비는 서버가 보유 확인 후 처리 (효과는 즉시, 인벤은 서버 값으로 동기화)
-    if (typeof NET !== 'undefined' && NET.ready && NET.token) {
-      NET.call('consume', { id: hotItem, count: 1 }).then(r => {
-        if (r && r.ok) { try { const inv = JSON.parse(r.inventory); if (Array.isArray(inv)) player.inventory = inv; } catch (e) {} if (!hasItem(hotItem, 1)) player.hotbar[selectedHotbar] = null; buildHotbar(); }
-      }).catch(() => {});
-    } else {
-      const removed = removeFromInventory(hotItem, 1);
-      if (removed) {
-        if (!hasItem(hotItem, 1)) player.hotbar[selectedHotbar] = null;
-        buildHotbar();
-      }
+    const removed = removeFromInventory(hotItem, 1);
+    if (removed) {
+      if (!hasItem(hotItem, 1)) player.hotbar[selectedHotbar] = null;
+      buildHotbar();
     }
   } else if (item.type === 'consumable') {
     if (hotItem === 'teleport_scroll') {
@@ -16659,20 +16641,6 @@ function _nextNotif() {} // 호환성 유지 (사용 안 함)
 window.craftItem = function (idx) {
   const recipe = RECIPES[idx]; if (!recipe) return;
   if (!Object.entries(recipe.ingredients).every(([id, cnt]) => hasItem(id, cnt))) return;
-  // 🔐 서버 권위: 서버가 재료 확인·소비·결과 지급 (조작 불가). 연결 없으면 로컬
-  if (typeof NET !== 'undefined' && NET.ready && NET.token) {
-    NET.call('craft', { result: recipe.result }).then(r => {
-      if (r && r.ok) {
-        try { const inv = JSON.parse(r.inventory); if (Array.isArray(inv)) player.inventory = inv; } catch (e) {}
-        buildHotbar();
-        if (typeof SFX !== 'undefined') { SFX.craft(); if (ITEMS[recipe.result]?.gun || ITEMS[recipe.result]?.missile) SFX.reload(); }
-        try { progOnCraft(recipe.amount || 1); } catch (e) {}
-        gainXP(5); showNotification(`🔨 ${recipe.name} 제작 완료!`);
-        hideCraftTooltip(); showCrafting();
-      } else if (r && r.error === 'no_mat') { showNotification('❌ 재료 부족!'); }
-    }).catch(() => {});
-    return;
-  }
   Object.entries(recipe.ingredients).forEach(([id, cnt]) => removeFromInventory(id, cnt));
   addToInventory(recipe.result, recipe.amount);
   if (typeof SFX !== 'undefined') { SFX.craft(); if (ITEMS[recipe.result]?.gun || ITEMS[recipe.result]?.missile) SFX.reload(); }
@@ -16685,15 +16653,6 @@ window.craftItem = function (idx) {
 
 window.buyItem = function (itemId, price) {
   if (player.gold < price) return;
-  // 🔐 서버 권위 구매 (연결 시) — 서버가 골드 차감·아이템 지급
-  if (typeof NET !== 'undefined' && NET.ready && NET.token) {
-    NET.call('buy', { id: itemId, count: 1 }).then(r => {
-      if (r && r.ok) { player.gold = r.gold; try { const inv = JSON.parse(r.inventory); if (Array.isArray(inv)) player.inventory = inv; } catch (e) {} buildHotbar(); showInventory && (document.getElementById('inventoryPanel') && showInventory()); }
-      else if (r && r.error === 'no_gold') showNotification('💰 골드 부족!');
-    }).catch(() => {});
-    showNotification(`🛒 ${ITEMS[itemId].name} 구매!`);
-    return;
-  }
   player.gold -= price;
   addToInventory(itemId, 1);
   showNotification(`🛒 ${ITEMS[itemId].name} 구매!`);
@@ -17744,16 +17703,22 @@ async function drainMyPendingGifts() {
   } catch(e) {} finally { _draining = false; }
 }
 
+// 관리자 대상이 본인인가? (닉네임/아이디 둘 다 허용, 비었으면 본인)
+function _isSelfTarget(t) {
+  if (!t) return true;
+  return t === player?.name || t === currentUserId;
+}
+
 function adminGiveGold() {
   const amt = Math.max(1, Math.floor(parseInt(document.getElementById('adminGoldAmount')?.value) || 0));
   if (!amt) { showNotification('금액을 입력하세요'); return; }
   const target = _adminTarget();
-  // 🔐 서버 경유 지급 (롤백 안 됨). 서버 연결 안 되면 기존 선물 방식
-  if (typeof NET !== 'undefined' && NET.ready && NET.token) {
-    NET.call('admin_give', { target, kind: 'gold', value: amt }).then(r => {
-      if (r && r.ok) { showNotification(`💰 ${target}에게 ${amt}G 지급! (잔고 ${r.gold})`, { duration: 3000 }); addChatMessage('관리자', `${target} 골드 +${amt}`, '#FFD24A'); }
-      else showNotification('❌ 지급 실패: ' + (r && r.error || '?') + ' (관리자 권한 확인)');
-    }).catch(() => showNotification('❌ 서버 오류'));
+  // 본인이면 즉시 로컬 적용 (저장 덮어쓰기 방지) — 관리자 선물은 검증 불필요
+  if (_isSelfTarget(target)) {
+    player.gold = Math.max(0, Math.min(1e9, (player.gold || 0) + amt));
+    showNotification(`💰 본인 골드 +${amt} (잔고 ${player.gold})`, { duration: 3000 });
+    addChatMessage('관리자', `본인 골드 +${amt}`, '#FFD24A');
+    if (!isOffline && supabase && currentUserId) supabase.savePlayer(currentUserId, player);
     return;
   }
   adminDeliverGift(target, { gold: amt }, `골드 ${amt}G`);
@@ -17764,11 +17729,12 @@ function adminGiveItem() {
   const qty = Math.max(1, Math.floor(parseInt(document.getElementById('adminItemQty')?.value) || 1));
   if (!itemId || !ITEMS[itemId]) { showNotification('아이템을 선택하세요'); return; }
   const target = _adminTarget();
-  if (typeof NET !== 'undefined' && NET.ready && NET.token) {
-    NET.call('admin_give', { target, kind: 'item', value: itemId, count: qty }).then(r => {
-      if (r && r.ok) { showNotification(`🎁 ${target}에게 ${ITEMS[itemId].name} x${qty} 지급!`, { duration: 3000 }); addChatMessage('관리자', `${target} ${ITEMS[itemId].name} x${qty}`, '#88DDFF'); }
-      else showNotification('❌ 지급 실패: ' + (r && r.error || '?') + ' (관리자 권한 확인)');
-    }).catch(() => showNotification('❌ 서버 오류'));
+  if (_isSelfTarget(target)) {
+    addToInventory(itemId, qty);
+    buildHotbar();
+    showNotification(`🎁 본인 ${ITEMS[itemId].name} x${qty} 지급!`, { duration: 3000 });
+    addChatMessage('관리자', `본인 ${ITEMS[itemId].name} x${qty}`, '#88DDFF');
+    _safeSaveInventory('admin_self_item');
     return;
   }
   adminDeliverGift(target, { itemId, count: qty }, `${ITEMS[itemId].name} x${qty}`);
