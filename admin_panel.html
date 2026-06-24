@@ -9711,12 +9711,22 @@ function killAnimal(a) {
   const goldDrop = a.boss ? Math.floor(Math.random() * 100) + 50 : Math.floor(Math.random() * 10) + 1;
   // 팀 보상 공유 (보스)
   if (a.boss && myTeam) {
-    const shareMsg = `팀 보스 클리어! +${goldDrop}G 보상`;
     if (!isOffline && supabase) supabase.broadcast('team_boss_reward', { gold: goldDrop, xp: xpGain, teamId: myTeam.id });
-    showNotification(shareMsg);
+    showNotification(`팀 보스 클리어! 보상 지급`);
   }
-  player.gold += goldDrop;
-  spawnDamageNumber(a.x, a.y - 10, `+${goldDrop}G`, '#FFD700');
+  // 🔐 서버 권위: 처치 골드는 s.js가 계산·지급 (조작 불가). 연결 없으면 로컬 폴백
+  if (typeof NET !== 'undefined' && NET.ready && NET.token) {
+    NET.call('kill', { mob: a.id || a.type || a.name || (a.boss ? 'boss' : '_default'), boss: !!a.boss }).then(r => {
+      if (r && r.ok) {
+        if (typeof r.gold === 'number') player.gold = r.gold;
+        if (typeof r.xp === 'number') player.xp = r.xp;
+        spawnDamageNumber(a.x, a.y - 10, `+${r.gained != null ? r.gained : 0}G`, '#FFD700');
+      } else if (r && r.banned) { showBanScreen(r.reason, r.email || 'rladnwns54@gmail.com'); }
+    }).catch(() => {});
+  } else {
+    player.gold += goldDrop;
+    spawnDamageNumber(a.x, a.y - 10, `+${goldDrop}G`, '#FFD700');
+  }
   for (let i = 0; i < 10; i++) {
     particles.push({ x: a.x + 16, y: a.y + 16,
       vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 1) * 4,
@@ -10614,10 +10624,17 @@ function useItem() {
       showNotification(`${item.name} 사용! MP +${item.mana}`);
     }
     if (item.buff) { player.buffs.push({ type: item.buff, remaining: item.duration }); showNotification(`✨ ${item.name} 효과 발동!`); }
-    const removed = removeFromInventory(hotItem, 1);
-    if (removed) {
-      if (!hasItem(hotItem, 1)) player.hotbar[selectedHotbar] = null;
-      buildHotbar();
+    // 🔐 서버 권위: 소비는 서버가 보유 확인 후 처리 (효과는 즉시, 인벤은 서버 값으로 동기화)
+    if (typeof NET !== 'undefined' && NET.ready && NET.token) {
+      NET.call('consume', { id: hotItem, count: 1 }).then(r => {
+        if (r && r.ok) { try { const inv = JSON.parse(r.inventory); if (Array.isArray(inv)) player.inventory = inv; } catch (e) {} if (!hasItem(hotItem, 1)) player.hotbar[selectedHotbar] = null; buildHotbar(); }
+      }).catch(() => {});
+    } else {
+      const removed = removeFromInventory(hotItem, 1);
+      if (removed) {
+        if (!hasItem(hotItem, 1)) player.hotbar[selectedHotbar] = null;
+        buildHotbar();
+      }
     }
   } else if (item.type === 'consumable') {
     if (hotItem === 'teleport_scroll') {
@@ -16642,6 +16659,20 @@ function _nextNotif() {} // 호환성 유지 (사용 안 함)
 window.craftItem = function (idx) {
   const recipe = RECIPES[idx]; if (!recipe) return;
   if (!Object.entries(recipe.ingredients).every(([id, cnt]) => hasItem(id, cnt))) return;
+  // 🔐 서버 권위: 서버가 재료 확인·소비·결과 지급 (조작 불가). 연결 없으면 로컬
+  if (typeof NET !== 'undefined' && NET.ready && NET.token) {
+    NET.call('craft', { result: recipe.result }).then(r => {
+      if (r && r.ok) {
+        try { const inv = JSON.parse(r.inventory); if (Array.isArray(inv)) player.inventory = inv; } catch (e) {}
+        buildHotbar();
+        if (typeof SFX !== 'undefined') { SFX.craft(); if (ITEMS[recipe.result]?.gun || ITEMS[recipe.result]?.missile) SFX.reload(); }
+        try { progOnCraft(recipe.amount || 1); } catch (e) {}
+        gainXP(5); showNotification(`🔨 ${recipe.name} 제작 완료!`);
+        hideCraftTooltip(); showCrafting();
+      } else if (r && r.error === 'no_mat') { showNotification('❌ 재료 부족!'); }
+    }).catch(() => {});
+    return;
+  }
   Object.entries(recipe.ingredients).forEach(([id, cnt]) => removeFromInventory(id, cnt));
   addToInventory(recipe.result, recipe.amount);
   if (typeof SFX !== 'undefined') { SFX.craft(); if (ITEMS[recipe.result]?.gun || ITEMS[recipe.result]?.missile) SFX.reload(); }
