@@ -113,7 +113,7 @@ async function handleLogin(m) {
 // ============================================================
 // save — 서버가 변화량 검증 (급증 차단), 진짜 값 반환 → 클라 동기화
 // ============================================================
-const LIM = { GOLD_PS: 150, GOLD_BUF: 4000, XP_PS: 200, XP_BUF: 4000, LV_JUMP: 2, ITEM_CAP: 200, SLOTS: 120 };
+const LIM = { GOLD_PS: 200, GOLD_BUF: 10000, XP_PS: 300, XP_BUF: 10000, LV_JUMP: 2, ITEM_CAP: 1000, SLOTS: 120 };
 function validateInvDelta(prevStr, nextStr) {
   const prev = {}; for (const s of parseInv(prevStr)) prev[s.id] = s.count;
   const out = [];
@@ -308,21 +308,23 @@ async function handleSave(uid, d) {
   set.team_id = (typeof d.team_id === 'string') ? safeStr(d.team_id, 64) : null;
   set.hunger = clampNum(d.hunger, 0, 1000, u.hunger || 0);
 
-  // 🔒 골드: 감소(소비) 허용, 증가는 속도 상한
+  // 👑 관리자는 검증 면제 (관리자 선물·테스트 자유) — 그외 유저만 상한 적용
+  const isAdmin = ADMIN_IDS.has(uid);
+  // 🔒 골드: 감소(소비) 허용, 증가는 속도 상한 (관리자 면제)
   const reqGold = clampNum(d.gold, 0, 1e9, u.gold);
   const goldCap = (u.gold || 0) + LIM.GOLD_PS * elapsed + LIM.GOLD_BUF;
-  set.gold = reqGold > goldCap ? u.gold : reqGold;
-  if (reqGold > goldCap) console.warn(`⚠️ ${uid} 골드 급증 차단 ${u.gold}→${reqGold}`);
+  set.gold = (isAdmin || reqGold <= goldCap) ? reqGold : u.gold;
+  if (!isAdmin && reqGold > goldCap) console.warn(`⚠️ ${uid} 골드 급증 차단 ${u.gold}→${reqGold}`);
   // 🔒 XP
   const reqXp = clampNum(d.xp, 0, 1e9, u.xp);
   const xpCap = (u.xp || 0) + LIM.XP_PS * elapsed + LIM.XP_BUF;
-  set.xp = reqXp > xpCap ? u.xp : reqXp;
-  // 🔒 레벨: 1회 저장에 +2까지 (연속 레벨업 허용, 점프만 차단)
+  set.xp = (isAdmin || reqXp <= xpCap) ? reqXp : u.xp;
+  // 🔒 레벨: 1회 저장에 +2까지 (관리자 면제)
   const reqLv = clampNum(d.level, 1, 999, u.level);
-  set.level = reqLv > (u.level || 1) + 2 ? (u.level || 1) : reqLv;
-  // 🔒 킬: 1회 +200 이내
+  set.level = (isAdmin || reqLv <= (u.level || 1) + 2) ? reqLv : (u.level || 1);
+  // 🔒 킬: 1회 +300 이내
   const reqK = clampNum(d.kills, 0, 1e8, u.kills || 0);
-  set.kills = reqK > (u.kills || 0) + 200 ? (u.kills || 0) : reqK;
+  set.kills = reqK > (u.kills || 0) + 300 ? (u.kills || 0) : reqK;
   // 🔒 인벤토리: 화이트리스트 + 아이템당 급증 상한
   if (typeof d.inventory === 'string') set.inventory = validateInvDelta(u.inventory, d.inventory);
 
