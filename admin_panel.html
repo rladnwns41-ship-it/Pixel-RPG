@@ -10427,14 +10427,20 @@ function attack(forceAttack) {
       const dist = Math.abs(op.x + 12 - (attackX + range * TILE / 2));
       const distY = Math.abs(op.y - player.y);
       if (dist < range * TILE && distY < TILE * 2) {
-        const dmg = Math.max(1, atkDmg - 2);
+        const isCrit = Math.random() < 0.16;
+        let dmg = Math.max(1, atkDmg - 2);
+        if (isCrit) dmg = Math.floor(dmg * 1.7);
         // 내 스폰 무적은 다른 플레이어를 때리는 즉시 해제 (상대 상태/온라인 무관)
         if (!_isMinigameServer) breakSpawnInvincible();
-        spawnDamageNumber(op.x, op.y, `⚔️${dmg}`, '#FF6644');
+        spawnDamageNumber(op.x, op.y, isCrit ? ('⚡' + dmg) : ('⚔️' + dmg), isCrit ? '#FFE24A' : '#FF6644', isCrit || dmg >= 30);
+        // ⚔️ 손맛 이펙트 (무기별) + 카메라 흔들림
+        weaponHitFx(hotItem, weapon, op.x, op.y, player.dir, dmg, isCrit);
         showNotification(`⚔️ PVP: ${op.name}에게 ${dmg} 데미지!`);
         if (!isOffline && supabase) {
           if (!_isMinigameServer && op.spawnInvincible) { showNotification('🛡️ 상대가 무적 상태!'); return; }
             supabase.broadcast('pvp_hit', { target: op.name, dmg, attacker: player.name, inDungeon: dungeonMode });
+            // 💥 명중 이펙트를 모두에게 (피격자·구경꾼도 타격감 보임)
+            supabase.broadcast('hit_fx', { x: op.x, y: op.y, hotItem, dir: player.dir, dmg, crit: isCrit, magic: !!(weapon && weapon.magic) });
         }
       }
     });
@@ -18466,6 +18472,11 @@ function handleRealtimeMessage(msg) {
         if (ad.dead && !existing.dead) existing.dead = true;
       }
     });
+  }
+  // 💥 공격 명중 이펙트 수신 — 다른 사람 공격도 타격감 보임
+  if (event === 'hit_fx' && data && typeof weaponHitFx === 'function') {
+    try { weaponHitFx(data.hotItem, data.magic ? { magic: true } : null, data.x, data.y, data.dir || 1, data.dmg || 5, !!data.crit); } catch (e) {}
+    return;
   }
   // Handle PVP hits
   if (event === 'pvp_hit' && (data.target === player?.name || data.target === currentUserId)) {
