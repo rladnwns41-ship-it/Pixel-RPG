@@ -1622,6 +1622,10 @@ class FirebaseClient {
   async saveMapChanges(changes, worldId) {
     if (!changes || changes.length === 0) return;
     const wid = worldId || 'main';
+    // 🔐 서버 경유(검증+admin 쓰기). 연결 없으면 Firebase 직접 폴백
+    if (typeof NET !== 'undefined' && NET.ready && NET.token) {
+      try { NET.ws.send(JSON.stringify({ t: 'tile', token: NET.token, wid, changes })); return; } catch (e) {}
+    }
     const updates = {};
     changes.forEach(c => {
       updates[`map_tiles/${wid}/${c.x}_${c.y}`] = { x: c.x, y: c.y, tile: c.t };
@@ -1642,6 +1646,9 @@ class FirebaseClient {
   // ── 상자(보관함) 영구 저장 ──
   async saveChestDB(worldId, chest) {
     const wid = worldId || 'main';
+    if (typeof NET !== 'undefined' && NET.ready && NET.token) {
+      try { NET.ws.send(JSON.stringify({ t: 'chest_set', token: NET.token, wid, chest: { id: chest.id, type: chest.type, ownerName: chest.ownerName, tx: chest.tx, ty: chest.ty, items: chest.items || [] } })); return; } catch (e) {}
+    }
     try { await this.db.ref(`chests/${wid}/${chest.id}`).set({
       id: chest.id, type: chest.type, ownerName: chest.ownerName,
       tx: chest.tx, ty: chest.ty, items: chest.items || []
@@ -1649,6 +1656,9 @@ class FirebaseClient {
   }
   async deleteChestDB(worldId, id) {
     const wid = worldId || 'main';
+    if (typeof NET !== 'undefined' && NET.ready && NET.token) {
+      try { NET.ws.send(JSON.stringify({ t: 'chest_del', token: NET.token, wid, id })); return; } catch (e) {}
+    }
     try { await this.db.ref(`chests/${wid}/${id}`).remove(); } catch(e) {}
   }
   async loadChestsDB(worldId) {
@@ -1664,6 +1674,9 @@ class FirebaseClient {
   // ── 시체상자 영구 저장 (모든 플레이어 공유) ──
   async saveCorpseDB(worldId, corpse) {
     const wid = worldId || 'main';
+    if (typeof NET !== 'undefined' && NET.ready && NET.token) {
+      try { NET.ws.send(JSON.stringify({ t: 'corpse_set', token: NET.token, wid, corpse: { id: corpse.id, ownerName: corpse.ownerName, x: corpse.x, y: corpse.y, spawnedAt: corpse.spawnedAt, items: corpse.items || [] } })); return; } catch (e) {}
+    }
     try { await this.db.ref(`corpses/${wid}/${corpse.id}`).set({
       id: corpse.id, ownerName: corpse.ownerName,
       x: corpse.x, y: corpse.y, spawnedAt: corpse.spawnedAt,
@@ -1672,6 +1685,9 @@ class FirebaseClient {
   }
   async deleteCorpseDB(worldId, id) {
     const wid = worldId || 'main';
+    if (typeof NET !== 'undefined' && NET.ready && NET.token) {
+      try { NET.ws.send(JSON.stringify({ t: 'corpse_del', token: NET.token, wid, id })); return; } catch (e) {}
+    }
     try { await this.db.ref(`corpses/${wid}/${id}`).remove(); } catch(e) {}
   }
   async loadCorpsesDB(worldId) {
