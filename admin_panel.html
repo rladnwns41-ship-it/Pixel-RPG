@@ -10874,19 +10874,27 @@ function addToInventory(itemId, count = 1) {
   return true;
 }
 
-// 🎒 가방 시스템: 기본 40칸 + 장착한 가방 레벨만큼 추가
-const BASE_INV_SLOTS = 40;
+// 🎒 가방 시스템: 기본 60칸 + 가장 좋은 가방 보너스 (소지·장착·핫바 어디든)
+const BASE_INV_SLOTS = 60;
 const BAG_BONUS = { bag_small: 30, bag_medium: 60, bag_large: 100, bag_huge: 160 }; // 가방별 추가 칸
 function getInvCapacity() {
-  let cap = BASE_INV_SLOTS;
-  if (player && player.equipment && player.equipment.bag) cap += (BAG_BONUS[player.equipment.bag] || 0);
-  // 가방을 인벤에 가지고만 있어도 최대 개 적용 (장착 UI 없어도 동작)
-  if (player && player.inventory) {
-    let best = 0;
-    for (const it of player.inventory) if (BAG_BONUS[it.id]) best = Math.max(best, BAG_BONUS[it.id]);
-    cap = Math.max(cap, BASE_INV_SLOTS + best);
+  let best = 0;
+  if (!player) return BASE_INV_SLOTS;
+  // 장비(객체도 문자열 JSON도 처리)
+  let eq = player.equipment;
+  if (typeof eq === 'string') { try { eq = JSON.parse(eq); } catch (e) { eq = null; } }
+  if (eq && typeof eq === 'object') {
+    for (const k in eq) { const v = eq[k]; if (typeof v === 'string' && BAG_BONUS[v]) best = Math.max(best, BAG_BONUS[v]); }
   }
-  return cap;
+  // 인벤토리
+  if (Array.isArray(player.inventory)) {
+    for (const it of player.inventory) if (it && BAG_BONUS[it.id]) best = Math.max(best, BAG_BONUS[it.id]);
+  }
+  // 핫바
+  if (Array.isArray(player.hotbar)) {
+    for (const id of player.hotbar) if (id && BAG_BONUS[id]) best = Math.max(best, BAG_BONUS[id]);
+  }
+  return BASE_INV_SLOTS + best;
 }
 window.getInvCapacity = getInvCapacity;
 
