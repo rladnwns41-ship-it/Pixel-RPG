@@ -113,7 +113,7 @@ async function handleLogin(m) {
 // ============================================================
 // save — 서버가 변화량 검증 (급증 차단), 진짜 값 반환 → 클라 동기화
 // ============================================================
-const LIM = { GOLD_PS: 200, GOLD_BUF: 10000, XP_PS: 300, XP_BUF: 10000, LV_JUMP: 2, ITEM_CAP: 1000, SLOTS: 120 };
+const LIM = { GOLD_PS: 200, GOLD_BUF: 10000, XP_PS: 300, XP_BUF: 10000, LV_JUMP: 2, ITEM_CAP: 1000, SLOTS: 220 };
 function validateInvDelta(prevStr, nextStr) {
   const prev = {}; for (const s of parseInv(prevStr)) prev[s.id] = s.count;
   const out = [];
