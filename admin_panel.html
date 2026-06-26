@@ -4556,6 +4556,43 @@ const ITEM_DRAW = {
     _p(cx,5,13,6,2,'#4422AA'); _p(cx,6,14,4,2,'#331188');
     _p(cx,4,5,3,1,'#AA88FF'); _p(cx,9,7,2,1,'#9977EE'); // stars
   },
+  // 🎒 가방 4종 (레벨별 색·크기 다름)
+  bag_small: cx => {
+    _p(cx,5,2,6,1,'#8a5a2c'); // 손잡이
+    _p(cx,5,2,1,2,'#8a5a2c'); _p(cx,10,2,1,2,'#8a5a2c');
+    _p(cx,4,4,8,9,'#a06a34'); _p(cx,4,4,8,2,'#b87c3e'); // 몸통+덮개
+    _p(cx,4,6,8,1,'#6e4520'); // 덮개 선
+    _p(cx,7,6,2,3,'#5a3818'); _p(cx,7,8,2,1,'#3f270f'); // 버클
+    _p(cx,4,12,8,1,'#6e4520');
+  },
+  bag_medium: cx => {
+    _p(cx,4,2,8,1,'#2f6f8a'); // 손잡이
+    _p(cx,4,2,1,2,'#2f6f8a'); _p(cx,11,2,1,2,'#2f6f8a');
+    _p(cx,3,4,10,10,'#3f86a6'); _p(cx,3,4,10,2,'#4f9cc0');
+    _p(cx,3,6,10,1,'#27566c');
+    _p(cx,7,6,2,3,'#1e4252'); _p(cx,7,8,2,1,'#13303c'); // 버클
+    _p(cx,3,9,10,1,'#27566c'); // 옆주머니 선
+    _p(cx,4,13,8,1,'#27566c');
+  },
+  bag_large: cx => {
+    _p(cx,3,2,10,1,'#3a7a3a'); // 손잡이
+    _p(cx,3,2,1,2,'#3a7a3a'); _p(cx,12,2,1,2,'#3a7a3a');
+    _p(cx,2,4,12,11,'#499649'); _p(cx,2,4,12,2,'#5cb35c');
+    _p(cx,2,6,12,1,'#2e5f2e');
+    _p(cx,7,6,2,4,'#234a23'); _p(cx,7,9,2,1,'#163016'); // 버클
+    _p(cx,2,9,12,1,'#2e5f2e'); _p(cx,4,10,2,3,'#3a7a3a'); _p(cx,10,10,2,3,'#3a7a3a'); // 주머니
+    _p(cx,2,14,12,1,'#2e5f2e');
+  },
+  bag_huge: cx => {
+    _p(cx,3,1,10,1,'#7a5aa8'); // 손잡이
+    _p(cx,3,1,1,2,'#7a5aa8'); _p(cx,12,1,1,2,'#7a5aa8');
+    _p(cx,1,3,14,12,'#9270c6'); _p(cx,1,3,14,2,'#a98ad8');
+    _p(cx,1,5,14,1,'#624a86');
+    _p(cx,7,5,2,4,'#4e3a6c'); _p(cx,7,8,2,1,'#352549'); // 버클
+    _p(cx,1,9,14,1,'#624a86'); _p(cx,3,10,3,4,'#7a5aa8'); _p(cx,10,10,3,4,'#7a5aa8'); // 큰 주머니
+    _p(cx,5,4,2,1,'#d4b8ff'); _p(cx,11,6,1,1,'#d4b8ff'); // 반짝임
+    _p(cx,1,14,14,1,'#624a86');
+  },
   ring_hp: cx => {
     _p(cx,5,2,6,2,'#CC1133'); _p(cx,3,4,10,2,'#DD2244');
     _p(cx,2,6,2,4,'#CC1133'); _p(cx,12,6,2,4,'#CC1133');
@@ -5152,10 +5189,10 @@ const ITEMS = {
   shield: { name: '방패', icon: '🛡️', type: 'armor', slot: 'offhand', desc: '방어력 +10', def: 10 },
   cape: { name: '망토', icon: '🧣', type: 'armor', slot: 'back', desc: '방어력 +4', def: 4 },
   // 🎒 가방 (장착 시 인벤토리 칸 확장 — 레벨 높을수록 더 많이)
-  bag_small: { name: '작은 가방', icon: '🎒', type: 'armor', slot: 'bag', desc: 'Lv.1 가방 · 인벤 +10칸', bagLevel: 1, stackable: false },
-  bag_medium: { name: '중형 가방', icon: '🎒', type: 'armor', slot: 'bag', desc: 'Lv.2 가방 · 인벤 +20칸', bagLevel: 2, stackable: false },
-  bag_large: { name: '큰 가방', icon: '🎒', type: 'armor', slot: 'bag', desc: 'Lv.3 가방 · 인벤 +35칸', bagLevel: 3, stackable: false },
-  bag_huge: { name: '거대한 가방', icon: '🎒', type: 'armor', slot: 'bag', desc: 'Lv.4 가방 · 인벤 +50칸', bagLevel: 4, stackable: false },
+  bag_small: { name: '작은 가방', icon: '🎒', type: 'armor', slot: 'bag', desc: 'Lv.1 가방 · 인벤 +30칸', bagLevel: 1, stackable: false },
+  bag_medium: { name: '중형 가방', icon: '🎒', type: 'armor', slot: 'bag', desc: 'Lv.2 가방 · 인벤 +60칸', bagLevel: 2, stackable: false },
+  bag_large: { name: '큰 가방', icon: '🎒', type: 'armor', slot: 'bag', desc: 'Lv.3 가방 · 인벤 +100칸', bagLevel: 3, stackable: false },
+  bag_huge: { name: '거대한 가방', icon: '🎒', type: 'armor', slot: 'bag', desc: 'Lv.4 가방 · 인벤 +160칸', bagLevel: 4, stackable: false },
   ring_hp: { name: 'HP 반지', icon: '💍', type: 'accessory', desc: '최대 HP +20', hpBonus: 20 },
   ring_mp: { name: 'MP 반지', icon: '💍', type: 'accessory', desc: '최대 MP +15', mpBonus: 15 },
   amulet: { name: '부적', icon: '📿', type: 'accessory', desc: '행운 +5', luck: 5 },
@@ -7758,6 +7795,24 @@ function drawAnimal(a) {
     ctx.fillText(a.name, sx + 16, sy - 9);
   }
 
+  // 🎯 전투 보조 오버레이 (설정 토글)
+  if (gameSettings.showHitbox) {
+    ctx.strokeStyle = a.passive ? 'rgba(80,255,140,0.8)' : 'rgba(255,70,70,0.85)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(sx + 0.5, sy + 0.5, 31, 31);
+  }
+  if (gameSettings.showEnemyHp && a.currentHp > 0) {
+    ctx.fillStyle = '#000'; ctx.font = '7px "Press Start 2P"'; ctx.textAlign = 'center';
+    const hpTxt = Math.ceil(a.currentHp) + '/' + a.hp;
+    ctx.fillText(hpTxt, sx + 16 + 1, sy + 44 + 1);
+    ctx.fillStyle = a.boss ? '#FFD24A' : '#9fffc0';
+    ctx.fillText(hpTxt, sx + 16, sy + 44);
+  }
+  if (gameSettings.showEnemyName && a.currentHp >= a.hp) {
+    ctx.fillStyle = '#000'; ctx.font = '6px "Press Start 2P"'; ctx.textAlign = 'center';
+    ctx.fillText(a.name, sx + 16 + 1, sy - 8); ctx.fillStyle = '#cfe0ff'; ctx.fillText(a.name, sx + 16, sy - 9);
+  }
+
   if (a.boss) {
     ctx.fillStyle = '#FF4444';
     ctx.font = '7px "Press Start 2P"';
@@ -10007,7 +10062,8 @@ function drawFarmPlots() {
 // ⚙️ 게임 설정 (효과음·BGM·화질) — localStorage 저장
 // ============================================================
 let gameSettings = (() => {
-  const def = { sfxOn: true, sfxVol: 0.7, bgmOn: true, bgmVol: 0.3, quality: 'high', showFps: false };
+  const def = { sfxOn: true, sfxVol: 0.7, bgmOn: true, bgmVol: 0.3, quality: 'high', showFps: false,
+    showHitbox: false, showEnemyHp: false, showEnemyName: false, showAim: false, lowGfx: false };
   try { return Object.assign(def, JSON.parse(localStorage.getItem('mr_settings') || '{}')); }
   catch (e) { return def; }
 })();
@@ -10818,9 +10874,9 @@ function addToInventory(itemId, count = 1) {
   return true;
 }
 
-// 🎒 가방 시스템: 기본 30칸 + 장착한 가방 레벨만큼 추가
-const BASE_INV_SLOTS = 30;
-const BAG_BONUS = { bag_small: 10, bag_medium: 20, bag_large: 35, bag_huge: 50 }; // 가방별 추가 칸
+// 🎒 가방 시스템: 기본 40칸 + 장착한 가방 레벨만큼 추가
+const BASE_INV_SLOTS = 40;
+const BAG_BONUS = { bag_small: 30, bag_medium: 60, bag_large: 100, bag_huge: 160 }; // 가방별 추가 칸
 function getInvCapacity() {
   let cap = BASE_INV_SLOTS;
   if (player && player.equipment && player.equipment.bag) cap += (BAG_BONUS[player.equipment.bag] || 0);
@@ -12526,7 +12582,12 @@ function showSettings() {
         <button onclick="setQualitySetting('high')" id="setQhigh" style="font-family:'Press Start 2P',monospace;font-size:7px;padding:6px 9px;border:2px solid;cursor:pointer;${qBtn('high',g.quality)}">높음</button>
       `)}
       ${row('FPS 표시', tglBtn('setFps', g.showFps, 'toggleSetting(\'showFps\')'))}
-      <div style="font-size:7px;color:#5a628f;text-align:center;margin-top:12px;line-height:1.6;">화질 '낮음'은 사양이 낮은 PC에서 부드럽게,<br>'높음'은 더 선명하게 보여줍니다.</div>
+      <div style="font-size:8px;color:#FF8866;margin:12px 0 6px;letter-spacing:1px;">— 전투 / PVP 보조 —</div>
+      ${row('히트박스 표시', tglBtn('setHitbox', g.showHitbox, 'toggleSetting(\'showHitbox\')'))}
+      ${row('상대 체력 숫자', tglBtn('setEnemyHp', g.showEnemyHp, 'toggleSetting(\'showEnemyHp\')'))}
+      ${row('상대 이름 표시', tglBtn('setEnemyName', g.showEnemyName, 'toggleSetting(\'showEnemyName\')'))}
+      ${row('조준선 표시', tglBtn('setAim', g.showAim, 'toggleSetting(\'showAim\')'))}
+      <div style="font-size:7px;color:#5a628f;text-align:center;margin-top:8px;line-height:1.6;">전투 보조 기능은 필요한 것만 켜세요.<br>화면이 복잡해지면 끌 수 있습니다.</div>
     </div>`;
 }
 
@@ -19346,6 +19407,19 @@ function gameLoop(timestamp) {
     if (p._dx === undefined || Math.abs(p.x - p._dx) > 200 || Math.abs(p.y - p._dy) > 200) { p._dx = p.x; p._dy = p.y; }
     else { p._dx += (p.x - p._dx) * 0.3; p._dy += (p.y - p._dy) * 0.3; }
     drawPlayer(p, true);
+    // 🎯 PVP 보조 오버레이 (설정 토글) — 내 적(팀원 아님)에만
+    const opEnemy = !isTeammate(p.name);
+    const psx = (p._dx ?? p.x) - camera.x, psy = (p._dy ?? p.y) - camera.y;
+    if (gameSettings.showHitbox) {
+      ctx.strokeStyle = opEnemy ? 'rgba(255,70,70,0.85)' : 'rgba(80,160,255,0.8)';
+      ctx.lineWidth = 1; ctx.strokeRect(psx + 0.5, psy + 0.5, 24, 30);
+    }
+    if (gameSettings.showEnemyHp && p.hp != null) {
+      const hpTxt = Math.ceil(p.hp) + (p.maxHp ? '/' + p.maxHp : '');
+      ctx.font = '7px "Press Start 2P"'; ctx.textAlign = 'center';
+      ctx.fillStyle = '#000'; ctx.fillText(hpTxt, psx + 12 + 1, psy + 46 + 1);
+      ctx.fillStyle = opEnemy ? '#ff8888' : '#9fffc0'; ctx.fillText(hpTxt, psx + 12, psy + 46);
+    }
   });
   updateTeabag();
   updateGhostMode();
@@ -19397,6 +19471,19 @@ function gameLoop(timestamp) {
 
   if (frameCount % 60 === 0) drawMinimap(); // slower minimap refresh
   drawWaypointMarker();
+  // 🎯 조준선 (설정 토글) — 플레이어에서 마우스 방향으로 점선
+  if (gameSettings.showAim && player && mouseWorldX !== null && !chatOpen) {
+    const pcx = player.x + player.w / 2 - camera.x, pcy = player.y + player.h / 2 - camera.y;
+    const mx = mouseWorldX - camera.x, my = mouseWorldY - camera.y;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,90,90,0.5)'; ctx.lineWidth = 1; ctx.setLineDash([5, 5]);
+    ctx.beginPath(); ctx.moveTo(pcx, pcy); ctx.lineTo(mx, my); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.strokeStyle = 'rgba(255,90,90,0.9)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(mx, my, 6, 0, Math.PI * 2); ctx.moveTo(mx - 9, my); ctx.lineTo(mx + 9, my); ctx.moveTo(mx, my - 9); ctx.lineTo(mx, my + 9); ctx.stroke();
+    ctx.restore();
+    ctx.textAlign = 'left';
+  }
 
   // 🔫 궤도 레이저 쿨타임 표시 (레이저 제어기 들고 있을 때)
   if (player && !spaceMode && player.hotbar[selectedHotbar] === 'laser_controller') {
