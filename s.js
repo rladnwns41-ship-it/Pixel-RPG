@@ -416,6 +416,34 @@ async function actCorpseDelete(uid, wid, id) {
 // HTTP + WebSocket
 // ============================================================
 const app = express();
+app.disable('x-powered-by');   // 🔒 Express 명시 숨김 (정보 노출 차단)
+
+// 🔒 보안 헤더 일괄 적용 (CSP / 클릭잭킹 / HSTS / MIME / 정보노출)
+app.use((req, res, next) => {
+  // 클릭잭킹 방지 (iframe 삽입 차단)
+  res.setHeader('X-Frame-Options', 'DENY');
+  // MIME 스니핑 차단
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  // 레퍼러 정보 최소화
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  // 불필요한 브라우저 기능 차단
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=()');
+  // HSTS — HTTPS 강제 (1년, 서브도메인 포함). HTTPS 요청에만 의미있음
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  // CSP — 게임이 인라인 스크립트/이벤트를 쓰므로 unsafe-inline 허용하되, 출처는 제한
+  res.setHeader('Content-Security-Policy',
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://cdn.jsdelivr.net https://unpkg.com; " +
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+    "font-src 'self' https://fonts.gstatic.com data:; " +
+    "img-src 'self' data: blob:; " +
+    "media-src 'self' data: blob:; " +
+    "connect-src 'self' ws: wss: https://*.firebaseio.com https://*.googleapis.com https://api.groq.com; " +
+    "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'");
+  next();
+});
+
+// 🔒 서버 에러는 상세 경로/스택을 클라에 노출하지 않음 (Information Disclosure - Full Path)
 
 // 🔒 보안: 저장소 루트를 통째로 서빙하지 않는다 (.git/.env/s.js 노출 방지).
 //    클라이언트에 필요한 파일만 화이트리스트로 내보낸다.
@@ -461,6 +489,8 @@ app.get(/.*/, (req, res) => {
   return res.status(404).end();
 });
 const server = http.createServer(app);
+// 🔒 전역 에러 핸들러: 스택·풀패스를 클라에 노출하지 않음
+app.use((err, req, res, next) => { console.error('http_err', err && err.message); if (res.headersSent) return next(err); res.status(500).json({ error: 'server_error' }); });
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', (ws) => {
