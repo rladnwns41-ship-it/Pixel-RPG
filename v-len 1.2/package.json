@@ -1,0 +1,12 @@
+{
+  "name": "medieval-realm-lan",
+  "version": "2.0.0",
+  "description": "Medieval Realm — LAN 전용 서버 (Firebase 없음, npm 설치 없음)",
+  "main": "s.js",
+  "scripts": {
+    "start": "node s.js"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}
