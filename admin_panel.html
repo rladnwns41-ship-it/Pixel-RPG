@@ -145,8 +145,16 @@ body {
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   z-index: 9999;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px 12px;
+  box-sizing: border-box;
+  scrollbar-gutter: stable;
 }
+#loginScreen::-webkit-scrollbar { width: 8px; }
+#loginScreen::-webkit-scrollbar-track { background: transparent; margin: 8px 0; }
+#loginScreen::-webkit-scrollbar-thumb { background: #2a3060; border-radius: 4px; }
+#loginScreen::-webkit-scrollbar-thumb:hover { background: #3a4088; }
 
 #loginScreen::before {
   content: '';
@@ -1127,6 +1135,20 @@ canvas#gameCanvas {
           <label class="input-label">비밀번호 확인</label>
           <input id="regPw2" placeholder="••••••••" maxlength="32" type="password" autocomplete="off">
         </div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin:10px 0 12px;font-size:11px;color:#c8d0ff;font-family:'Press Start 2P',monospace;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="agreeTOS" style="width:14px;height:14px;cursor:pointer;">
+            <span>[필수] <a href="#" onclick="showTOSModal('tos');return false;" style="color:#ffd24a;text-decoration:underline;">이용약관</a> 동의</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="agreePP" style="width:14px;height:14px;cursor:pointer;">
+            <span>[필수] <a href="#" onclick="showTOSModal('pp');return false;" style="color:#ffd24a;text-decoration:underline;">개인정보처리방침</a> 동의</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:#8899cc;">
+            <input type="checkbox" id="agreeAll" style="width:14px;height:14px;cursor:pointer;" onclick="toggleAllAgree(this)">
+            <span>전체 동의</span>
+          </label>
+        </div>
         <button class="login-btn" onclick="doRegister()">🌟 회원가입</button>
       </div>
 
@@ -1141,6 +1163,238 @@ canvas#gameCanvas {
     </div>
   </div>
 </div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     이용약관 / 개인정보처리방침 모달 (인게임 pixel-modal 스타일)
+     ═══════════════════════════════════════════════════════════ -->
+<div id="tosModal" class="pixel-modal-overlay" style="display:none;z-index:10001;">
+  <div class="pixel-modal" style="width:min(560px, 92vw); max-height:82vh; display:flex; flex-direction:column;">
+    <div class="panel-header">
+      <span id="tosModalTitle" class="panel-title" style="font-size:11px; color:#ffd700;">📜 이용약관</span>
+      <button onclick="closeTOSModal()"
+        style="font-family:'Press Start 2P',monospace;font-size:8px;padding:6px 10px;
+        background:#2a1a1a;border-top:1px solid #6a3a3a;border-left:1px solid #6a3a3a;
+        border-bottom:1px solid #1a0a0a;border-right:1px solid #1a0a0a;
+        color:#ff8888;cursor:pointer;">✕ 닫기</button>
+    </div>
+    <div id="tosModalBody" class="panel-body"
+      style="padding:18px 20px; color:#c8d0ff; font-size:11px; line-height:1.9;
+      font-family:'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-serif;
+      max-height:calc(82vh - 60px); overflow-y:auto; scrollbar-gutter:stable;"></div>
+  </div>
+</div>
+
+<style>
+#tosModalBody { margin: 0; }
+#tosModalBody::-webkit-scrollbar { width: 8px; }
+#tosModalBody::-webkit-scrollbar-track { background: transparent; margin: 10px 0; }
+#tosModalBody::-webkit-scrollbar-thumb { background: #2a3060; border-radius: 4px; }
+#tosModalBody::-webkit-scrollbar-thumb:hover { background: #3a4088; }
+#tosModalBody b { color: #ffd24a; display:block; margin-top:12px; margin-bottom:4px; font-size:12px; }
+#tosModalBody b:first-child { margin-top:0; }
+</style>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// 약관 콘텐츠 (법적 효력 확보를 위해 최소 표기 유지)
+// ═══════════════════════════════════════════════════════════
+window._TOS_TEXT = {
+  tos: {
+    title: '📜 이용약관',
+    body:
+      '<b style="color:#ffd24a;">제1조 (목적)</b><br>' +
+      '본 약관은 본 서비스(이하 "서비스")를 이용함에 있어 이용자와 운영자 간의 권리·의무 및 책임사항을 규정함을 목적으로 합니다.<br><br>' +
+
+      '<b style="color:#ffd24a;">제2조 (약관의 효력)</b><br>' +
+      '이용자가 회원가입 시 "동의" 버튼을 누르면 본 약관에 동의한 것으로 간주되며, 이후 서비스 이용에 대해 본 약관이 적용됩니다.<br><br>' +
+
+      '<b style="color:#ffd24a;">제3조 (이용자의 의무)</b><br>' +
+      '이용자는 다음 행위를 하여서는 안 됩니다.<br>' +
+      '1. 타인의 개인정보 도용 또는 허위정보 등록<br>' +
+      '2. 서비스의 정상적인 운영을 방해하는 행위 (해킹, 치트, 매크로, 버그 악용, 리버스 엔지니어링 등)<br>' +
+      '3. 다른 이용자에 대한 욕설, 비방, 명예훼손, 성희롱, 차별, 협박, 스토킹, 왕따(집단따돌림), 학교폭력 등 일체의 괴롭힘<br>' +
+      '4. 음란물, 폭력적 콘텐츠, 광고, 도박, 불법 링크 등의 게시<br>' +
+      '5. 실명·전화번호·주소·학교명 등 개인정보를 무단으로 게시하는 행위<br>' +
+      '6. 관련 법령 및 공서양속에 반하는 일체의 행위<br><br>' +
+
+      '<b style="color:#ffd24a;">제4조 (제재)</b><br>' +
+      '운영자는 이용자가 제3조를 위반하는 경우 사전 통보 없이 다음 조치를 취할 수 있습니다.<br>' +
+      '· 채팅 제한, 계정 일시정지, 영구정지, 데이터 삭제<br>' +
+      '· 위법 행위 발견 시 관계 수사기관 신고 및 필요한 정보(가입정보, 접속기록, IP 등)의 제공<br><br>' +
+
+      '<b style="color:#ffd24a;">제5조 (면책)</b><br>' +
+      '1. 운영자는 천재지변, 서버 장애, 이용자의 귀책사유로 인한 손해에 대해 책임을 지지 않습니다.<br>' +
+      '2. 서비스 내에서 이용자 간에 발생한 분쟁(다툼, 사기, 명예훼손, 학교폭력 등)은 <b>당사자 간에 해결</b>함을 원칙으로 하며, 운영자는 이에 관여할 의무가 없습니다. 다만, 신고가 접수된 경우 관련 법령에 따라 합리적인 범위에서 조치할 수 있습니다.<br>' +
+      '3. 이용자가 본인의 부주의(비밀번호 유출 등)로 입은 피해에 대해 운영자는 책임지지 않습니다.<br>' +
+      '4. 본 조는 관련 법령상 강행규정에 반하지 아니하는 범위에서 효력을 가집니다.<br><br>' +
+
+      '<b style="color:#ffd24a;">제6조 (게임 내 재화·아이템)</b><br>' +
+      '서비스 내 골드·아이템·경험치 등은 <b>현실 금전적 가치가 없으며</b>, 서비스 종료·시즌 초기화·계정 정지 시 소멸될 수 있습니다. 이에 대한 보상 의무는 없습니다.<br><br>' +
+
+      '<b style="color:#ffd24a;">제7조 (지식재산권)</b><br>' +
+      '서비스의 코드·이미지·사운드·게임 시스템 등에 대한 지식재산권은 운영자에게 있으며, 무단 복제·배포·리버스 엔지니어링 시 민·형사상 책임을 물을 수 있습니다.<br><br>' +
+
+      '<b style="color:#ffd24a;">제8조 (약관 변경)</b><br>' +
+      '운영자는 본 약관을 개정할 수 있으며, 개정 시 서비스 내 공지로 갈음합니다.<br><br>' +
+
+      '<b style="color:#ffd24a;">제9조 (신고 및 문의)</b><br>' +
+      'rladnwns54@gmail.com<br><br>' +
+
+      '<div style="color:#8899cc;font-size:10px;margin-top:16px;">시행일: 2026년 7월 11일</div>'
+  },
+  pp: {
+    title: '🔒 개인정보처리방침',
+    body:
+      '<b style="color:#ffd24a;">1. 수집하는 개인정보 항목</b><br>' +
+      '· 필수: 아이디, 닉네임, 비밀번호(암호화 저장)<br>' +
+      '· 자동 수집: 접속 IP, 접속 일시, 서비스 이용 기록, 기기 정보(디바이스 ID), 게임 플레이 데이터<br><br>' +
+
+      '<b style="color:#ffd24a;">2. 개인정보의 수집·이용 목적</b><br>' +
+      '· 회원가입 및 로그인, 본인 확인<br>' +
+      '· 서비스 제공 및 게임 데이터 저장<br>' +
+      '· 부정이용(해킹·치트·다중계정 등) 방지 및 조사<br>' +
+      '· 이용자 간 분쟁 조정, 민원 처리<br>' +
+      '· 법령 위반 행위에 대한 대응<br><br>' +
+
+      '<b style="color:#ffd24a;">3. 개인정보의 보유 기간</b><br>' +
+      '회원 탈퇴 시 즉시 파기함을 원칙으로 합니다. 다만, 관련 법령(통신비밀보호법 등)에 따라 접속 기록은 최대 3개월, 부정이용 기록은 최대 1년 보관될 수 있습니다.<br><br>' +
+
+      '<b style="color:#ffd24a;">4. 개인정보의 제3자 제공</b><br>' +
+      '운영자는 원칙적으로 이용자의 개인정보를 외부에 제공하지 않습니다. 다만, 다음의 경우에는 예외로 합니다.<br>' +
+      '· 이용자가 사전에 동의한 경우<br>' +
+      '· <b>수사기관 등이 법령에 따른 정당한 절차와 근거(영장, 공문 등)를 갖추어 요청하는 경우</b><br>' +
+      '· 생명·신체의 급박한 위험이 있는 경우<br><br>' +
+
+      '<b style="color:#ffd24a;">5. 이용자의 권리</b><br>' +
+      '이용자는 언제든지 본인의 개인정보에 대한 열람·정정·삭제·처리정지를 요구할 수 있으며, 아래 문의처로 요청하실 수 있습니다.<br><br>' +
+
+      '<b style="color:#ffd24a;">6. 개인정보 보호를 위한 기술적·관리적 조치</b><br>' +
+      '· 비밀번호는 bcrypt 해시로 암호화 저장 (평문 저장 X)<br>' +
+      '· HTTPS 통신, XSS·CSRF 방어, 접근 권한 관리<br><br>' +
+
+      '<b style="color:#ffd24a;">7. 부정이용 시 조치</b><br>' +
+      '이용자가 서비스를 해킹, 무단 조작, 리버스 엔지니어링, 타인 계정 침해 등의 목적으로 이용하는 경우, 운영자는 관련 정보(접속 IP, 로그, 계정정보 등)를 수사기관에 제공하고 신고할 수 있습니다.<br><br>' +
+
+      '<b style="color:#ffd24a;">8. 개인정보 보호책임자 / 문의</b><br>' +
+      'rladnwns54@gmail.com<br><br>' +
+
+      '<div style="color:#8899cc;font-size:10px;margin-top:16px;">시행일: 2026년 7월 11일</div>'
+  }
+};
+
+window.showTOSModal = function(kind) {
+  const d = window._TOS_TEXT[kind]; if (!d) return;
+  document.getElementById('tosModalTitle').textContent = d.title;
+  document.getElementById('tosModalBody').innerHTML = d.body;
+  const m = document.getElementById('tosModal');
+  m.style.display = 'flex';
+  // 배경 클릭 시 닫기
+  m.onmousedown = function(e){ if (e.target === m) closeTOSModal(); };
+};
+window.closeTOSModal = function() {
+  document.getElementById('tosModal').style.display = 'none';
+};
+window.toggleAllAgree = function(el) {
+  document.getElementById('agreeTOS').checked = el.checked;
+  document.getElementById('agreePP').checked = el.checked;
+};
+
+// ═══════════════════════════════════════════════════════════
+// 채팅/닉네임/팀명 검열 필터 (금칙어·개인정보·광고 차단)
+// ═══════════════════════════════════════════════════════════
+window._BAD_WORDS = [
+  // 욕설 (일부만 예시, 필요시 추가)
+  '시발','씨발','ㅅㅂ','ㅆㅂ','병신','ㅄ','ㅂㅅ','존나','좆','ㅈㄴ','새끼','ㅅㄲ','개새','썅','미친','ㅁㅊ',
+  '지랄','ㅈㄹ','꺼져','닥쳐','엿먹','fuck','shit','bitch','asshole','dick','pussy',
+  // 성적/혐오
+  '섹스','sex','야동','자위','창녀','걸레','매춘','포르노','porn','ㅅㅅ',
+  // 차별/혐오
+  '한남','한녀','급식충','틀딱','맘충','노슬아치','좌빨','우꼴','전라디언','일베','메갈',
+  // 학폭 관련
+  '왕따','따돌림','빵셔틀','괴롭혀','때려','폭행','자살해','뒤져','뒤져라','뒤져버','죽어','죽여',
+  // 광고/외부 유도
+  '디스코드 오세요','디코 오세요','텔레그램','텔레','카톡','카카오톡 아이디','인스타 팔로우','팔로우해',
+  // 도박/사기
+  '토토','스포츠토토','바카라','슬롯','환전','충전 이벤트','불법','도박','먹튀',
+];
+window._BAD_REGEX = [
+  /01[016789][-\s]?\d{3,4}[-\s]?\d{4}/g,          // 전화번호
+  /\d{6}[-\s]?\d{7}/g,                              // 주민번호
+  /https?:\/\/[^\s]+/gi,                            // URL
+  /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, // 이메일
+  /디코[\s.]*[a-zA-Z0-9._-]{2,}/gi,                 // 디코 아이디
+  /카톡[\s.:]*[a-zA-Z0-9._-]{2,}/gi,                // 카톡 아이디
+];
+
+// 텍스트 검열: 금지어/개인정보 있으면 { blocked:true, reason } 반환. 아니면 {ok:true, text: 마스킹된 텍스트}
+window.censorText = function(raw, opts) {
+  opts = opts || {};
+  if (typeof raw !== 'string') return { blocked: true, reason: '잘못된 입력' };
+  let t = raw.normalize('NFKC');
+  // 자음/모음만 반복 (ㅋㅋㅋㅋㅋ, ㅅㅂㅅㅂ 회피)
+  const compact = t.replace(/\s+/g,'').toLowerCase();
+  for (const w of window._BAD_WORDS) {
+    if (compact.includes(w.toLowerCase())) return { blocked: true, reason: '금지어 감지: '+w };
+  }
+  for (const r of window._BAD_REGEX) {
+    if (r.test(t)) return { blocked: true, reason: '개인정보/링크는 보낼 수 없어요' };
+    r.lastIndex = 0;
+  }
+  // 도배 (같은 글자 8회 이상 반복)
+  if (/(.)\1{7,}/.test(t)) return { blocked: true, reason: '도배 금지' };
+  // 길이
+  const max = opts.max || 200;
+  if (t.length > max) t = t.slice(0, max);
+  return { ok: true, text: t };
+};
+
+// 닉네임/팀명 전용 (더 엄격)
+window.censorName = function(raw) {
+  if (typeof raw !== 'string' || !raw.trim()) return { blocked: true, reason: '이름을 입력하세요' };
+  const t = raw.trim();
+  if (t.length > 12) return { blocked: true, reason: '12자 이하' };
+  const c = window.censorText(t, { max: 12 });
+  if (c.blocked) return c;
+  // 운영자 사칭 방지
+  if (/관리자|운영자|admin|GM|모드|mod|공식|official|system|시스템/i.test(t))
+    return { blocked: true, reason: '운영자 사칭 금지' };
+  return { ok: true, text: t };
+};
+
+// ═══════════════════════════════════════════════════════════
+// 신고 제출 (Firebase reports 노드에 저장 → 관리자 확인)
+// ═══════════════════════════════════════════════════════════
+window.submitReport = async function(target, reason) {
+  try {
+    const rep = {
+      target: String(target).slice(0, 24),
+      reason: String(reason).slice(0, 500),
+      reporter: (window.currentUserId || (window.player && window.player.name) || 'unknown'),
+      reporter_nick: (window.player && window.player.name) || '',
+      at: Date.now(),
+      at_iso: new Date().toISOString(),
+      ua: navigator.userAgent.slice(0, 200),
+    };
+    // 서버 경유 (WebSocket) — 우선
+    if (window.NET && window.NET.ready) {
+      try {
+        const r = await window.NET.call('report', rep);
+        if (r && r.ok) { if (window.addChatMessage) addChatMessage('시스템', '✅ 신고 접수됨. 검토 후 조치합니다.', '#44FF88'); return; }
+      } catch(e) {}
+    }
+    // 폴백: Firebase 직접 (규칙에서 abuse_warnings 는 쓰기 허용됨)
+    if (window.firebase && firebase.database) {
+      const key = 'r' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
+      await firebase.database().ref('reports/' + key).set(rep);
+      if (window.addChatMessage) addChatMessage('시스템', '✅ 신고 접수됨. 검토 후 조치합니다.', '#44FF88');
+    } else {
+      if (window.addChatMessage) addChatMessage('시스템', '❌ 신고 실패: 서버 연결 없음', '#FF8888');
+    }
+  } catch(e) {
+    if (window.addChatMessage) addChatMessage('시스템', '❌ 신고 실패: ' + (e.message || e), '#FF8888');
+  }
+};
+</script>
 
 <!-- 마크 스타일 서버 선택 화면 (로그인 후 표시, loginScreen 밖) -->
 <div id="serverSelectScreen" style="display:none;position:fixed;inset:0;z-index:9999;background:#060810;align-items:center;justify-content:center;font-family:'Press Start 2P',monospace;">
@@ -18230,9 +18484,33 @@ function sendChat(rawText) {
   if (!text) return;
   // 도움말
   if (text === '/?' || text === '/도움말' || text === '/help') {
-    addChatMessage('도움말', '/팀챗 → 팀 모드 전환 · /전챗 → 전체 모드 · 모드는 계속 유지됨', '#88FFCC');
+    addChatMessage('도움말', '/팀챗 → 팀 모드 · /전챗 → 전체 모드 · /신고 닉네임 이유 → 신고', '#88FFCC');
     return;
   }
+  // ─── 신고 명령어: /신고 닉네임 이유 ───
+  if (text.startsWith('/신고 ') || text.startsWith('/report ')) {
+    const rest = text.replace(/^\/(신고|report)\s+/, '').trim();
+    const sp = rest.indexOf(' ');
+    const target = sp > 0 ? rest.slice(0, sp).trim() : rest.trim();
+    const reason = sp > 0 ? rest.slice(sp + 1).trim() : '';
+    if (!target) { addChatMessage('시스템', '사용법: /신고 닉네임 이유', '#FF8888'); return; }
+    if (!reason || reason.length < 3) { addChatMessage('시스템', '신고 이유를 3자 이상 적어주세요', '#FF8888'); return; }
+    submitReport(target, reason);
+    return;
+  }
+  // ─── 채팅 스팸/도배 레이트 ───
+  window._lastChatTs = window._lastChatTs || 0;
+  const nowT = Date.now();
+  if (nowT - window._lastChatTs < 700) { addChatMessage('시스템', '너무 빨라요! 잠시 후 다시', '#FF8888'); return; }
+  // ─── 검열 ───
+  const c = (window.censorText ? window.censorText(text, { max: 200 }) : { ok: true, text });
+  if (c.blocked) {
+    addChatMessage('시스템', '⛔ 채팅 차단됨: ' + c.reason, '#FF6666');
+    // 경고 카운트 누적 (서버측에서 처리하므로 로컬은 안내만)
+    return;
+  }
+  text = c.text;
+  window._lastChatTs = nowT;
   // 명령어: 모드 전환 (지속) + 같은 줄에 내용 있으면 그 내용도 전송
   let cmdSwitched = null;
   if (text.startsWith('/팀챗') || text.startsWith('/팀챁') || text.startsWith('/t')) {
@@ -20931,6 +21209,18 @@ async function doRegister() {
   if (!/^[a-zA-Z0-9]{4,16}$/.test(user_id)) { setAuthMsg('아이디: 영문/숫자 4~16자'); return; }
   if (pw.length < 4) { setAuthMsg('비밀번호: 4자 이상'); return; }
   if (pw !== pw2) { setAuthMsg('비밀번호가 일치하지 않습니다'); return; }
+  // ─── 약관 동의 필수 ───
+  const okTOS = document.getElementById('agreeTOS') && document.getElementById('agreeTOS').checked;
+  const okPP  = document.getElementById('agreePP')  && document.getElementById('agreePP').checked;
+  if (!okTOS || !okPP) { setAuthMsg('❌ 이용약관·개인정보처리방침에 동의해주세요'); return; }
+  // ─── 닉네임 검열 ───
+  const nickCheck = window.censorName ? window.censorName(nickname) : { ok: true };
+  if (nickCheck.blocked) { setAuthMsg('❌ 닉네임 거부: ' + nickCheck.reason); return; }
+  // ─── 동의 기록(법적 증거용, 로컬 + 서버 저장 시도) ───
+  try {
+    const rec = { user_id, tos: true, pp: true, agreed_at: new Date().toISOString(), ua: navigator.userAgent.slice(0,200) };
+    localStorage.setItem('_tos_agree_' + user_id, JSON.stringify(rec));
+  } catch(e) {}
   setAuthMsg('🔄 회원가입 중...', '#FFAA44');
   if (isOffline) { setAuthMsg('오프라인 모드 - 로그인 탭 이용'); return; }
   if (!supabase || !supabase.db) { setAuthMsg('서버에 연결 중입니다. 잠시 후 다시 시도하세요.'); return; }
@@ -21244,12 +21534,8 @@ window.startGame = function (userData) {
     setTimeout(() => startTutorial(), 1500);
   }
 
-  // 친구 초대 이벤트 먼저 → 닫으면 일일 출석 보상
-  // 보상창이 뜰 때까지 다른 창이 열리지 않도록 잠금
-  _inviteRewardPending = true;
-  setTimeout(() => showInviteEventPopup(), 800);
-  // 안전장치: 혹시 보상창이 안 떠도 2.5초 후 잠금 자동 해제
-  setTimeout(() => { _inviteRewardPending = false; }, 2500);
+  // 친구 초대 이벤트 제거됨 → 바로 일일 출석 보상
+  setTimeout(() => { try { checkDailyLoginReward(); } catch(e) {} }, 800);
 
   // 채팅 입력 중 게임으로 키 이벤트 전달 차단 + Enter 직접 처리
   const _ci = document.getElementById('chatInput');
