@@ -9472,8 +9472,10 @@ function updatePlayer() {
     if (spaceMode) depthEl.style.color = playerOxygen < 25 ? '#FF4466' : '#66CCFF';
   }
 
-  // ---- 낙하 데미지 ----
-  if (!player.onGround && player.vy > 0) {
+  // ---- 낙하 데미지 (심해·우주에선 무중력이므로 낙사 없음) ----
+  if (oceanMode || spaceMode) {
+    fallStartY = null;
+  } else if (!player.onGround && player.vy > 0) {
     if (fallStartY === null) fallStartY = player.y;
   } else if (player.onGround) {
     if (fallStartY !== null) {
@@ -15115,6 +15117,7 @@ function exitOcean() {
   otherPlayers = {};
   markMinimapDirty(); _minimapWorldCanvas = null; _tileLayerDirty = true;
   dismissNotificationById('swim');
+  window._lastOceanNotifState = null;
   showNotification('🌊 지상으로 귀환!');
 }
 window.tryEnterOcean = tryEnterOcean;
@@ -15186,15 +15189,18 @@ function updateOcean() {
     }
   }
 
-  // 심해 잠수 알림 (수영 중 알림과 동일한 방식)
-  if (hasSuit) {
-    showNotification('🌊 심해 잠수 중', {
-      persistent: true, id: 'swim', color: '#88CCFF', border: '#4488FF'
-    });
-  } else {
-    showNotification(_oceanOxygen <= 0 ? '💀 산소 고갈! 잠수복을 착용하세요!' : '⚠️ 산소 부족! 잠수복이 필요합니다', {
-      persistent: true, id: 'swim', color: _oceanOxygen <= 0 ? '#FF4444' : '#FFDD44', border: _oceanOxygen <= 0 ? '#FF6666' : '#FFAA00'
-    });
+  // 심해 잠수 알림 — 상태 변화 시에만 갱신 (매 프레임 호출 시 깜빡임 방지)
+  const _newOceanNotif = hasSuit ? 'suit' : (_oceanOxygen <= 0 ? 'empty' : 'nosuit');
+  if (window._lastOceanNotifState !== _newOceanNotif) {
+    window._lastOceanNotifState = _newOceanNotif;
+    dismissNotificationById('swim');
+    if (_newOceanNotif === 'suit') {
+      showNotification('🌊 심해 잠수 중', { persistent: true, id: 'swim', color: '#88CCFF', border: '#4488FF' });
+    } else if (_newOceanNotif === 'empty') {
+      showNotification('💀 산소 고갈! 잠수복을 착용하세요!', { persistent: true, id: 'swim', color: '#FF4444', border: '#FF6666' });
+    } else {
+      showNotification('⚠️ 산소 부족! 잠수복이 필요합니다', { persistent: true, id: 'swim', color: '#FFDD44', border: '#FFAA00' });
+    }
   }
 
   // 기포 스폰
