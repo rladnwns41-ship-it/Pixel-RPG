@@ -15114,6 +15114,7 @@ function exitOcean() {
   _oceanFishies = [];
   otherPlayers = {};
   markMinimapDirty(); _minimapWorldCanvas = null; _tileLayerDirty = true;
+  dismissNotificationById('swim');
   showNotification('🌊 지상으로 귀환!');
 }
 window.tryEnterOcean = tryEnterOcean;
@@ -15183,6 +15184,17 @@ function updateOcean() {
         if (typeof spawnDamageNumber === 'function') spawnDamageNumber(player.x, player.y, '💨 산소부족', '#66CCFF');
       }
     }
+  }
+
+  // 심해 잠수 알림 (수영 중 알림과 동일한 방식)
+  if (hasSuit) {
+    showNotification('🌊 심해 잠수 중', {
+      persistent: true, id: 'swim', color: '#88CCFF', border: '#4488FF'
+    });
+  } else {
+    showNotification(_oceanOxygen <= 0 ? '💀 산소 고갈! 잠수복을 착용하세요!' : '⚠️ 산소 부족! 잠수복이 필요합니다', {
+      persistent: true, id: 'swim', color: _oceanOxygen <= 0 ? '#FF4444' : '#FFDD44', border: _oceanOxygen <= 0 ? '#FF6666' : '#FFAA00'
+    });
   }
 
   // 기포 스폰
