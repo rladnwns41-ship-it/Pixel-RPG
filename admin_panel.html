@@ -5156,6 +5156,148 @@ const ITEM_DRAW = {
     // 빛반사
     _p(cx,8,0,1,2,'#FFF'); _p(cx,0,8,2,1,'#FFF');
   },
+  // ═══ 🌊 심해 아이템 6종 ═══
+  diving_suit: cx => {
+    // 노란색 잠수복 + 헬멧 창
+    // 헬멧 (둥근 유리)
+    _p(cx,4,1,8,4,'#FFD24A');
+    _p(cx,5,0,6,1,'#FFDD66');
+    _p(cx,4,4,8,1,'#CCA030');
+    // 유리 창 (파랑 반사)
+    _p(cx,5,1,6,3,'#66BBFF');
+    _p(cx,6,1,4,1,'#AADDFF');
+    _p(cx,6,2,1,1,'#FFFFFF');
+    _p(cx,9,2,1,1,'#FFFFFF');
+    // 몸통
+    _p(cx,3,5,10,7,'#FFD24A');
+    _p(cx,3,5,10,1,'#FFDD66');
+    _p(cx,3,11,10,1,'#CCA030');
+    // 산소통 (좌우 등)
+    _p(cx,2,6,1,5,'#8899BB');
+    _p(cx,13,6,1,5,'#8899BB');
+    // 벨트
+    _p(cx,3,8,10,1,'#664422');
+    // 다리
+    _p(cx,4,12,3,4,'#FFD24A');
+    _p(cx,9,12,3,4,'#FFD24A');
+    _p(cx,4,15,3,1,'#CCA030');
+    _p(cx,9,15,3,1,'#CCA030');
+    // 호스
+    _p(cx,7,4,2,1,'#666');
+  },
+  deep_pearl: cx => {
+    // 심해 진주 - 청록빛 광채 진주
+    // 배경 광채
+    _p(cx,4,4,8,8,'#88CCFF');
+    _p(cx,3,5,10,6,'#88CCFF');
+    _p(cx,5,3,6,10,'#88CCFF');
+    // 진주 본체
+    _p(cx,5,4,6,8,'#DDEEFF');
+    _p(cx,4,5,8,6,'#DDEEFF');
+    _p(cx,5,5,6,6,'#F0F8FF');
+    // 하이라이트
+    _p(cx,6,5,2,2,'#FFFFFF');
+    _p(cx,7,4,1,1,'#FFFFFF');
+    // 그림자
+    _p(cx,9,9,2,2,'#AABBDD');
+    _p(cx,10,10,1,1,'#8899BB');
+  },
+  abyss_ore: cx => {
+    // 심연 광석 - 보라/파랑 결정
+    // 그림자
+    _p(cx,3,10,10,3,'#1a0630');
+    _p(cx,4,13,8,2,'#1a0630');
+    // 본체 (돌 덩어리)
+    _p(cx,3,7,10,6,'#3a1a5a');
+    _p(cx,4,6,8,7,'#4a2a70');
+    _p(cx,5,5,6,8,'#5a3a88');
+    // 결정 (뾰족)
+    _p(cx,7,2,2,4,'#aa66ff');
+    _p(cx,6,3,4,3,'#8844cc');
+    _p(cx,5,4,6,2,'#7733bb');
+    _p(cx,3,7,2,3,'#aa66ff');
+    _p(cx,11,7,2,3,'#aa66ff');
+    // 빛나는 하이라이트
+    _p(cx,7,3,1,2,'#ffffff');
+    _p(cx,6,5,1,1,'#ddaaff');
+    _p(cx,10,5,1,1,'#ddaaff');
+    // 반짝
+    _p(cx,4,8,1,1,'#ffffff');
+    _p(cx,12,10,1,1,'#ffffff');
+  },
+  coral: cx => {
+    // 산호 - 분홍/주황 가지
+    // 기둥
+    _p(cx,7,10,2,6,'#ff6688');
+    _p(cx,7,15,2,1,'#cc4466');
+    // 아래 가지들
+    _p(cx,5,12,2,3,'#ff88aa');
+    _p(cx,9,12,2,3,'#ff88aa');
+    // 중간 가지
+    _p(cx,4,7,2,4,'#ff7799');
+    _p(cx,10,7,2,4,'#ff7799');
+    _p(cx,3,5,2,3,'#ff88aa');
+    _p(cx,11,5,2,3,'#ff88aa');
+    // 위 가지
+    _p(cx,6,4,2,7,'#ff88aa');
+    _p(cx,8,4,2,7,'#ff88aa');
+    _p(cx,5,2,2,3,'#ffaacc');
+    _p(cx,9,2,2,3,'#ffaacc');
+    _p(cx,7,1,2,3,'#ffbbdd');
+    // 하이라이트
+    _p(cx,7,2,1,1,'#ffffff');
+    _p(cx,5,6,1,1,'#ffddee');
+    _p(cx,9,6,1,1,'#ffddee');
+  },
+  kraken_ink: cx => {
+    // 크라켄 먹물 - 검은 유리병에 보라 액체
+    // 병목
+    _p(cx,6,1,4,2,'#443355');
+    _p(cx,7,0,2,1,'#665577');
+    // 병 본체
+    _p(cx,4,3,8,12,'#221133');
+    _p(cx,5,3,6,12,'#332244');
+    _p(cx,4,15,8,1,'#110022');
+    // 병 반사
+    _p(cx,5,4,1,10,'#554466');
+    _p(cx,10,4,1,10,'#110022');
+    // 먹물 (안쪽)
+    _p(cx,6,5,4,9,'#4a1a6a');
+    _p(cx,7,5,2,8,'#5a2a80');
+    // 보라 광채
+    _p(cx,7,7,2,2,'#8844cc');
+    _p(cx,8,8,1,1,'#cc88ff');
+    // 병뚜껑
+    _p(cx,6,0,4,1,'#886644');
+    _p(cx,5,1,6,1,'#aa7755');
+    // 하이라이트
+    _p(cx,5,4,1,1,'#ffffff');
+  },
+  giant_pearl: cx => {
+    // 거대 진주 - 무지개빛 큰 진주
+    // 무지개 오라 (4방향)
+    _p(cx,2,4,12,8,'#ffccdd');
+    _p(cx,3,3,10,10,'#ccddff');
+    _p(cx,4,2,8,12,'#ddffcc');
+    // 진주 본체
+    _p(cx,4,4,8,8,'#f0f0ff');
+    _p(cx,3,5,10,6,'#e8e8ff');
+    _p(cx,5,3,6,10,'#f8f8ff');
+    // 중앙 밝게
+    _p(cx,5,5,6,6,'#ffffff');
+    _p(cx,6,4,4,8,'#ffffff');
+    // 무지개 반사
+    _p(cx,5,5,2,2,'#ff88cc');
+    _p(cx,9,5,2,2,'#88ffcc');
+    _p(cx,5,9,2,2,'#88ccff');
+    _p(cx,9,9,2,2,'#ffcc88');
+    // 하이라이트 큰거
+    _p(cx,7,5,2,2,'#ffffff');
+    _p(cx,6,4,1,1,'#ffffff');
+    // 그림자
+    _p(cx,10,10,2,2,'#aabbcc');
+    _p(cx,11,11,1,1,'#8899aa');
+  },
 };
 
 // 캐시된 Canvas URL 반환
@@ -10883,6 +11025,17 @@ function attack(forceAttack) {
     }
   }
 
+  // 🐠 심해 생물 피격 (심해 모드일 때만)
+  if (oceanMode && typeof damageOceanCreatureAt === 'function') {
+    const attackX = player.x + player.w/2 + (player.dir > 0 ? TILE * 1.2 : -TILE * 1.2);
+    const attackY = player.y + player.h/2;
+    if (damageOceanCreatureAt(attackX, attackY, Math.max(1, atkDmg))) {
+      if (hotItem && DURABILITY_MAX[hotItem] && ITEMS[hotItem]?.type === 'weapon') {
+        reduceDurability(hotItem, 1);
+      }
+    }
+  }
+
   // Mining with broadcast
   if (mouseWorldX !== null && mouseWorldY !== null) {
     const mineX = Math.floor(mouseWorldX / TILE);
@@ -13054,7 +13207,7 @@ function showSettings() {
       ` : ''}
       <div style="font-size:8px;color:#FFD24A;margin:14px 0 6px;letter-spacing:1px;">— 🌟 신규 콘텐츠 —</div>
       <div style="display:flex;flex-direction:column;gap:6px;padding:6px 4px;">
-        <button onclick="closePanel();tryEnterOcean();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#0a1a3a,#050a20);border:2px solid #4488ff;color:#88ccff;cursor:pointer;">🌊 심해 탐사 (잠수복 필요)</button>
+        <button onclick="closePanel();showNotification('🌊 바다(물 근처)에서 F키를 눌러 잠수하세요!',{duration:3500});" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#0a1a3a,#050a20);border:2px solid #4488ff;color:#88ccff;cursor:pointer;">🌊 심해 잠수 방법</button>
         <button onclick="closePanel();showArenaRanking();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#2a0a2a,#150515);border:2px solid #ff4488;color:#ff88cc;cursor:pointer;">⚔️ PVP 아레나 (1v1)</button>
         <button onclick="closePanel();openMarketNPC();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#2a1a05,#150a02);border:2px solid #ffaa44;color:#ffcc88;cursor:pointer;">💹 방랑 상인 (동적 시세)</button>
       </div>
@@ -14797,15 +14950,18 @@ function _doReturnFromSpace() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🌊 심해 시스템 — 잠수복 필요, 심해 자원 채굴
+// 🌊 심해 시스템 v2 — 잠수복 필요, 심해 자원 채굴, 부력, 생물, 산소
 // ═══════════════════════════════════════════════════════════════════════════
+let _oceanBubbles = [];        // 심해 기포 파티클
+let _oceanFishies = [];        // 심해 생물 { x, y, vx, vy, type, size, hp, hostile, dmg, cooldown }
+let _oceanEnterHintEl = null;
+let _oceanOxygen = 100;         // 산소 게이지 (잠수복 없으면 급감)
+
 function tryEnterOcean() {
   if (spaceMode || dungeonMode || oceanMode) return;
-  // 바다 근처(맵 가장자리 or 물 타일 위)에서만 진입
-  // 간단하게 어디서든 아이템으로 진입 가능하게, 대신 잠수복 없으면 진입도 못하게
   const hasSuit = playerEquipmentHas('diving_suit');
   if (!hasSuit) {
-    showNotification('🤿 잠수복이 필요합니다! (제작 필요)', { duration: 2500 });
+    showNotification('🤿 잠수복이 필요합니다! (제작대에서 제작)', { duration: 2500 });
     return;
   }
   savedOverworldOcean = {
@@ -14818,37 +14974,94 @@ function tryEnterOcean() {
   dungeonBuildings = []; corpseBoxes = []; placedChests = []; parkedVehicles = []; otherPlayers = {};
   player.x = 10 * TILE; player.y = 10 * TILE; player.vx = 0; player.vy = 0;
   playerPressure = PRESSURE_MAX;
+  _oceanOxygen = 100;
+  _oceanBubbles = [];
+  spawnOceanCreatures();
   oceanMode = true;
   markMinimapDirty(); _minimapWorldCanvas = null; _tileLayerDirty = true;
-  showNotification('🌊 심해에 진입했습니다! 잠수복 유지 필수! [E]로 자원 채굴', { duration: 3500 });
-  addChatMessage('시스템', '🌊 심해 도착! 진주·산호·심연광석을 채취하세요', '#4488FF');
+  showNotification('🌊 심해 진입! 산소를 관리하세요. F키로 상승, S키로 하강', { duration: 4000 });
+  if (typeof addChatMessage === 'function') addChatMessage('시스템', '🌊 심해 도착! 진주·산호·심연광석을 채취하세요', '#4488FF');
 }
-// 심해 월드 생성 — 파랑/보라 배경, 자원 타일
+
+// 심해 월드: 위쪽은 밝은 파랑, 아래로 갈수록 자원 많음
 function generateOceanWorld() {
   const w = [];
   for (let y = 0; y < WORLD_H; y++) {
     w[y] = [];
     for (let x = 0; x < WORLD_W; x++) {
-      // 심해 자원 랜덤 배치 (희소하게)
+      // 자원 밀도가 아래로 갈수록 증가
+      const depthFactor = y / WORLD_H;
       const r = Math.random();
-      if (r < 0.005) w[y][x] = { type: 'ocean_pearl' };
-      else if (r < 0.008) w[y][x] = { type: 'ocean_ore' };
-      else if (r < 0.015) w[y][x] = { type: 'ocean_coral' };
+      if (r < 0.003 + depthFactor * 0.008) w[y][x] = { type: 'ocean_pearl' };
+      else if (r < 0.006 + depthFactor * 0.012) w[y][x] = { type: 'ocean_ore' };
+      else if (r < 0.014 + depthFactor * 0.010) w[y][x] = { type: 'ocean_coral' };
       else w[y][x] = null;
     }
   }
   return w;
 }
+
 function playerEquipmentHas(itemId) {
   try {
-    if (!player || !player.equipment) return false;
-    for (const slot in player.equipment) {
-      if (player.equipment[slot] === itemId) return true;
+    if (!player) return false;
+    if (player.equipment) {
+      for (const slot in player.equipment) {
+        if (player.equipment[slot] === itemId) return true;
+      }
     }
-    // 인벤에도 있으면 인정 (편의)
     return (player.inventory || []).some(s => s && s.id === itemId);
   } catch(e) { return false; }
 }
+
+// 🐠 심해 생물 스폰
+function spawnOceanCreatures() {
+  _oceanFishies = [];
+  // 해파리 (안전, 예쁨)
+  for (let i = 0; i < 6; i++) {
+    _oceanFishies.push({
+      type: 'jelly',
+      x: Math.random() * WORLD_W * TILE,
+      y: (0.2 + Math.random() * 0.6) * WORLD_H * TILE,
+      vx: 0, vy: -0.3 - Math.random() * 0.4,
+      size: 12 + Math.random() * 8,
+      hp: 5, maxHp: 5, hostile: false, dmg: 0,
+      hue: Math.floor(Math.random() * 60 + 260), // 자주~분홍
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+  // 상어 (위험!)
+  for (let i = 0; i < 4; i++) {
+    _oceanFishies.push({
+      type: 'shark',
+      x: Math.random() * WORLD_W * TILE,
+      y: (0.4 + Math.random() * 0.5) * WORLD_H * TILE,
+      vx: (Math.random() > 0.5 ? 1 : -1) * 1.5,
+      vy: 0,
+      size: 32, hp: 40, maxHp: 40, hostile: true, dmg: 15,
+      cooldown: 0,
+    });
+  }
+  // 크라켄 (심연 보스) — 아주 아래에 1마리
+  _oceanFishies.push({
+    type: 'kraken',
+    x: WORLD_W * TILE / 2, y: WORLD_H * TILE * 0.85,
+    vx: 0, vy: 0, size: 80, hp: 300, maxHp: 300, hostile: true, dmg: 40,
+    cooldown: 0, isBoss: true,
+  });
+}
+
+// 🫧 기포 스폰 (지속적으로)
+function spawnBubble() {
+  if (_oceanBubbles.length > 25) return;
+  _oceanBubbles.push({
+    x: player.x + (Math.random() - 0.5) * canvas.width,
+    y: player.y + canvas.height * 0.5 + Math.random() * 200,
+    vy: -0.5 - Math.random() * 1.2,
+    size: 2 + Math.random() * 5,
+    life: 300,
+  });
+}
+
 // 심해 채집 (E키/우클릭)
 function tryHarvestOcean() {
   if (!oceanMode || !player) return false;
@@ -14865,7 +15078,7 @@ function tryHarvestOcean() {
       else if (cell.type === 'ocean_ore') itemId = 'abyss_ore';
       else if (cell.type === 'ocean_coral') itemId = 'coral';
       if (itemId) {
-        addToInventory(player, itemId, 1);
+        if (typeof addToInventory === 'function') addToInventory(player, itemId, 1);
         world[cy][cx] = null;
         _tileLayerDirty = true;
         showNotification('🫧 ' + (ITEMS[itemId]?.name || itemId) + ' 획득!', { duration: 1200 });
@@ -14875,6 +15088,7 @@ function tryHarvestOcean() {
   }
   return false;
 }
+
 // 심해 나가기
 function exitOcean() {
   if (!oceanMode || !savedOverworldOcean) return;
@@ -14889,12 +15103,439 @@ function exitOcean() {
   savedOverworldOcean = null;
   oceanMode = false;
   playerPressure = PRESSURE_MAX;
+  _oceanOxygen = 100;
+  _oceanBubbles = [];
+  _oceanFishies = [];
   otherPlayers = {};
   markMinimapDirty(); _minimapWorldCanvas = null; _tileLayerDirty = true;
   showNotification('🌊 지상으로 귀환!');
 }
 window.tryEnterOcean = tryEnterOcean;
 window.exitOcean = exitOcean;
+window.tryHarvestOcean = tryHarvestOcean;
+
+// ─── 물 근처 감지 & 진입 프롬프트 ───
+function checkOceanEntryPrompt() {
+  if (oceanMode || spaceMode || dungeonMode || !player || !world) {
+    if (_oceanEnterHintEl) { _oceanEnterHintEl.remove(); _oceanEnterHintEl = null; }
+    return;
+  }
+  // 플레이어 주변 3칸 안에 물 있는지
+  const px = Math.floor(player.x / TILE), py = Math.floor(player.y / TILE);
+  let hasWater = false;
+  for (let dy = -2; dy <= 3; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      const cy = py + dy, cx = px + dx;
+      if (cy < 0 || cy >= WORLD_H || cx < 0 || cx >= WORLD_W) continue;
+      if (world[cy] && world[cy][cx] === TILES.WATER) { hasWater = true; break; }
+    }
+    if (hasWater) break;
+  }
+  if (hasWater) {
+    if (!_oceanEnterHintEl) {
+      _oceanEnterHintEl = document.createElement('div');
+      _oceanEnterHintEl.style.cssText = `
+        position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%);
+        z-index: 500; pointer-events: none;
+        background: linear-gradient(180deg, #0a1e3a, #051022);
+        border-top: 2px solid #4488cc; border-left: 2px solid #4488cc;
+        border-bottom: 2px solid #051022; border-right: 2px solid #051022;
+        padding: 8px 16px; box-shadow: 3px 3px 0 #000;
+        font-family: 'Press Start 2P', monospace; font-size: 9px;
+        color: #88ccff; text-shadow: 1px 1px 0 #000;
+      `;
+      document.body.appendChild(_oceanEnterHintEl);
+    }
+    const hasSuit = playerEquipmentHas('diving_suit');
+    _oceanEnterHintEl.innerHTML = hasSuit
+      ? '🌊 <span style="color:#ffdd66;">[F]</span> 심해 잠수'
+      : '🤿 잠수복이 필요합니다';
+  } else {
+    if (_oceanEnterHintEl) { _oceanEnterHintEl.remove(); _oceanEnterHintEl = null; }
+  }
+}
+
+// ─── 심해 물리·생물·산소 업데이트 (매 프레임) ───
+function updateOcean() {
+  if (!oceanMode || !player) return;
+
+  // 부력: 중력 훨씬 약함 + 자연 상승
+  player.vy *= 0.92;    // 물 저항
+  player.vx *= 0.94;
+
+  // 잠수복 유무에 따른 산소·수압
+  const hasSuit = playerEquipmentHas('diving_suit');
+  if (hasSuit) {
+    _oceanOxygen = Math.min(100, _oceanOxygen + 0.08); // 완만 회복
+  } else {
+    _oceanOxygen -= 0.35;
+    if (_oceanOxygen <= 0) {
+      _oceanOxygen = 0;
+      // 산소 0 → 지속 데미지
+      if (Math.random() < 0.05) {
+        player.hp = Math.max(0, player.hp - 3);
+        if (typeof spawnDamageNumber === 'function') spawnDamageNumber(player.x, player.y, '💨 산소부족', '#66CCFF');
+      }
+    }
+  }
+
+  // 기포 스폰
+  if (Math.random() < 0.15) spawnBubble();
+  // 기포 업데이트
+  for (let i = _oceanBubbles.length - 1; i >= 0; i--) {
+    const b = _oceanBubbles[i];
+    b.y += b.vy;
+    b.life--;
+    if (b.life <= 0 || b.y < camera.y - 100) _oceanBubbles.splice(i, 1);
+  }
+
+  // 생물 업데이트 (화면 근처만)
+  const camCX = camera.x + canvas.width / 2;
+  const camCY = camera.y + canvas.height / 2;
+  const CULL_DIST = canvas.width + 400;
+  for (const f of _oceanFishies) {
+    if (f.hp <= 0) continue;
+    // 화면에서 멀면 물리 스킵 (성능)
+    if (Math.abs(f.x - camCX) > CULL_DIST) continue;
+    if (f.type === 'jelly') {
+      f.phase += 0.04;
+      f.vy = -0.4 + Math.sin(f.phase) * 0.6;
+      f.x += Math.sin(f.phase * 0.7) * 0.3;
+      f.y += f.vy;
+      if (f.y < 100) f.y = WORLD_H * TILE - 100; // 무한 상승 방지
+    } else if (f.type === 'shark') {
+      // 플레이어 추적 (일정 거리 안에서만)
+      const dx = player.x - f.x, dy = player.y - f.y;
+      const d = Math.hypot(dx, dy);
+      if (d < 400) {
+        // 추적
+        f.vx = (dx / d) * 2.2;
+        f.vy = (dy / d) * 2.2;
+      } else {
+        // 순찰
+        if (Math.abs(f.vx) < 0.5) f.vx = (Math.random() > 0.5 ? 1 : -1) * 1.5;
+      }
+      f.x += f.vx; f.y += f.vy;
+      // 공격 판정
+      if (d < TILE * 1.8 && f.cooldown <= 0) {
+        f.cooldown = 60;
+        damagePlayerByAttack(f.dmg);
+        if (typeof spawnDamageNumber === 'function') spawnDamageNumber(player.x, player.y, '🦈' + f.dmg, '#FF4466');
+      }
+      if (f.cooldown > 0) f.cooldown--;
+    } else if (f.type === 'kraken') {
+      // 자기 자리 근처에서 촉수 휘두름 (원거리 접근 시 데미지)
+      f.phase = (f.phase || 0) + 0.02;
+      const dx = player.x - f.x, dy = player.y - f.y;
+      const d = Math.hypot(dx, dy);
+      if (d < 250 && f.cooldown <= 0) {
+        f.cooldown = 90;
+        damagePlayerByAttack(f.dmg);
+        if (typeof spawnDamageNumber === 'function') spawnDamageNumber(player.x, player.y, '🐙촉수!' + f.dmg, '#8844CC');
+      }
+      if (f.cooldown > 0) f.cooldown--;
+    }
+    // 월드 경계
+    if (f.x < 0) f.x = 0;
+    if (f.x > WORLD_W * TILE) f.x = WORLD_W * TILE;
+  }
+}
+
+// 배경 캐시 (성능 최적화)
+let _oceanBgCache = null;
+let _oceanBgCacheKey = null;
+
+// ─── 심해 배경 & 오브젝트 렌더 ───
+function drawOcean() {
+  if (!oceanMode || !ctx || !canvas) return;
+  const depthPct = Math.min(1, player.y / (WORLD_H * TILE));
+
+  // ── 배경 캐시 (깊이 5% 단위로만 재생성) ──
+  const bgKey = Math.floor(depthPct * 20) + '_' + canvas.width + '_' + canvas.height;
+  if (_oceanBgCacheKey !== bgKey || !_oceanBgCache) {
+    _oceanBgCacheKey = bgKey;
+    _oceanBgCache = document.createElement('canvas');
+    _oceanBgCache.width = canvas.width;
+    _oceanBgCache.height = canvas.height;
+    const bctx = _oceanBgCache.getContext('2d');
+    // 그라디언트
+    const topR = Math.floor(6 - depthPct * 6);
+    const topG = Math.floor(28 - depthPct * 24);
+    const topB = Math.floor(52 - depthPct * 40);
+    const grad = bctx.createLinearGradient(0, 0, 0, canvas.height);
+    grad.addColorStop(0, `rgb(${topR},${topG},${topB})`);
+    grad.addColorStop(0.5, `rgb(${Math.floor(topR*0.5)},${Math.floor(topG*0.5)},${Math.floor(topB*0.6)})`);
+    grad.addColorStop(1, `rgb(2,${Math.floor(8-depthPct*6)},${Math.floor(18-depthPct*14)})`);
+    bctx.fillStyle = grad;
+    bctx.fillRect(0, 0, canvas.width, canvas.height);
+    // 비네트
+    const vig = bctx.createRadialGradient(
+      canvas.width/2, canvas.height/2, canvas.width * 0.2,
+      canvas.width/2, canvas.height/2, canvas.width * 0.75
+    );
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, `rgba(0,0,0,${0.55 + depthPct * 0.35})`);
+    bctx.fillStyle = vig;
+    bctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  // 캐시된 배경 그리기 (매우 빠름)
+  ctx.drawImage(_oceanBgCache, 0, 0);
+
+  // ── 하얀 빛줄기 (수면 근처만) ──
+  if (player.y < WORLD_H * TILE * 0.15) {
+    for (let i = 0; i < 4; i++) {
+      const gx = (i * 200 + gameTime * 0.03) % (canvas.width + 200) - 100;
+      ctx.fillStyle = `rgba(200,240,255,${0.08})`;
+      ctx.beginPath();
+      ctx.moveTo(gx, 0); ctx.lineTo(gx + 30, 0);
+      ctx.lineTo(gx - 80, canvas.height * 0.6); ctx.lineTo(gx - 110, canvas.height * 0.6);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+
+  // ── 부유물 (12개로 축소) ──
+  const t = gameTime * 0.001;
+  ctx.fillStyle = 'rgba(180,220,255,0.5)';
+  for (let i = 0; i < 12; i++) {
+    const px = ((i * 73 - camera.x * 0.3) % canvas.width + canvas.width) % canvas.width;
+    const py = ((i * 127 - camera.y * 0.3 + t * 8) % canvas.height + canvas.height) % canvas.height;
+    ctx.fillRect(px, py, 1, 1);
+  }
+
+  // ── 기포 ──
+  ctx.fillStyle = 'rgba(180,220,255,0.3)';
+  for (const b of _oceanBubbles) {
+    const sx = b.x - camera.x, sy = b.y - camera.y;
+    if (sx < -10 || sx > canvas.width + 10 || sy < -10 || sy > canvas.height + 10) continue;
+    ctx.beginPath(); ctx.arc(sx, sy, b.size, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+// ─── 심해 자원 스파스 렌더 (renderTileLayer 대체) ───
+function drawOceanResources() {
+  if (!oceanMode || !ctx || !world || !canvas) return;
+  // 화면에 보이는 범위만 스캔 (매우 빠름)
+  const startX = Math.max(0, Math.floor(camera.x / TILE) - 1);
+  const endX = Math.min(WORLD_W, Math.ceil((camera.x + canvas.width) / TILE) + 1);
+  const startY = Math.max(0, Math.floor(camera.y / TILE) - 1);
+  const endY = Math.min(WORLD_H, Math.ceil((camera.y + canvas.height) / TILE) + 1);
+
+  for (let y = startY; y < endY; y++) {
+    if (!world[y]) continue;
+    for (let x = startX; x < endX; x++) {
+      const cell = world[y][x];
+      if (!cell || !cell.type) continue;
+      const sx = x * TILE - camera.x;
+      const sy = y * TILE - camera.y;
+      if (cell.type === 'ocean_pearl') {
+        // 진주 (반짝이는 흰색 원)
+        ctx.fillStyle = '#DDEEFF';
+        ctx.beginPath(); ctx.arc(sx + 16, sy + 16, 10, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath(); ctx.arc(sx + 13, sy + 13, 4, 0, Math.PI * 2); ctx.fill();
+      } else if (cell.type === 'ocean_ore') {
+        // 심연 광석 (보라 결정)
+        ctx.fillStyle = '#3a1a5a';
+        ctx.fillRect(sx + 4, sy + 8, 24, 20);
+        ctx.fillStyle = '#8844cc';
+        ctx.beginPath();
+        ctx.moveTo(sx + 8, sy + 20); ctx.lineTo(sx + 16, sy + 4);
+        ctx.lineTo(sx + 24, sy + 20); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#aa66ff';
+        ctx.beginPath();
+        ctx.moveTo(sx + 12, sy + 16); ctx.lineTo(sx + 16, sy + 8);
+        ctx.lineTo(sx + 20, sy + 16); ctx.closePath(); ctx.fill();
+      } else if (cell.type === 'ocean_coral') {
+        // 산호 (분홍 가지)
+        ctx.fillStyle = '#ff6688';
+        ctx.fillRect(sx + 14, sy + 12, 4, 18);
+        ctx.fillStyle = '#ff88aa';
+        ctx.fillRect(sx + 8, sy + 16, 4, 10);
+        ctx.fillRect(sx + 20, sy + 16, 4, 10);
+        ctx.fillRect(sx + 12, sy + 6, 4, 8);
+        ctx.fillRect(sx + 16, sy + 6, 4, 8);
+      }
+    }
+  }
+}
+window.drawOcean = drawOcean;
+window.drawOceanResources = drawOceanResources;
+
+// 생물 렌더
+function drawOceanCreatures() {
+  if (!oceanMode || !ctx) return;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  for (const f of _oceanFishies) {
+    if (f.hp <= 0) continue;
+    const sx = f.x - camera.x, sy = f.y - camera.y;
+    if (sx < -100 || sx > canvas.width + 100 || sy < -100 || sy > canvas.height + 100) continue;
+    if (f.type === 'jelly') {
+      // 해파리 — 반투명 종
+      const pulse = 0.9 + Math.sin(f.phase) * 0.1;
+      ctx.fillStyle = `hsla(${f.hue}, 80%, 65%, 0.55)`;
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, f.size * pulse, f.size * 0.7 * pulse, 0, Math.PI, 0);
+      ctx.fill();
+      // 촉수 (3개, 직선 - 곡선보다 훨씬 빠름)
+      ctx.strokeStyle = `hsla(${f.hue}, 80%, 75%, 0.45)`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = -1; i <= 1; i++) {
+        const tx = sx + i * 5 + Math.sin(f.phase + i) * 2;
+        ctx.moveTo(sx + i * 5, sy);
+        ctx.lineTo(tx, sy + f.size * 1.4);
+      }
+      ctx.stroke();
+    } else if (f.type === 'shark') {
+      // 상어 — 회색 픽셀
+      const dir = f.vx > 0 ? 1 : -1;
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.scale(dir, 1);
+      // 몸
+      ctx.fillStyle = '#4a5560';
+      ctx.beginPath();
+      ctx.moveTo(-24, 0); ctx.lineTo(20, -8);
+      ctx.lineTo(28, 0); ctx.lineTo(20, 6); ctx.closePath(); ctx.fill();
+      // 배 (밝은 회색)
+      ctx.fillStyle = '#8896a2';
+      ctx.beginPath();
+      ctx.moveTo(-20, 3); ctx.lineTo(18, 3);
+      ctx.lineTo(24, 0); ctx.lineTo(-24, 0); ctx.closePath(); ctx.fill();
+      // 지느러미
+      ctx.fillStyle = '#3a444e';
+      ctx.beginPath();
+      ctx.moveTo(-4, -8); ctx.lineTo(4, -20); ctx.lineTo(8, -8); ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-24, 0); ctx.lineTo(-36, -6); ctx.lineTo(-32, 6); ctx.closePath(); ctx.fill();
+      // 눈
+      ctx.fillStyle = '#000';
+      ctx.fillRect(14, -3, 3, 2);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(15, -2, 1, 1);
+      // 이빨
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(20, 2); ctx.lineTo(22, 6); ctx.lineTo(24, 2); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      // HP 바
+      if (f.hp < f.maxHp) {
+        ctx.fillStyle = '#000'; ctx.fillRect(sx - 20, sy - 22, 40, 4);
+        ctx.fillStyle = '#ff4466'; ctx.fillRect(sx - 19, sy - 21, Math.floor(38 * (f.hp / f.maxHp)), 2);
+      }
+    } else if (f.type === 'kraken') {
+      // 크라켄 보스 — 거대한 오징어 (촉수 8개)
+      const t = f.phase;
+      // 오라 (보스 위엄)
+      const auraR = 90 + Math.sin(t*2) * 12;
+      const g2 = ctx.createRadialGradient(sx, sy, 20, sx, sy, auraR);
+      g2.addColorStop(0, 'rgba(200,60,255,0.35)');
+      g2.addColorStop(1, 'rgba(80,0,120,0)');
+      ctx.fillStyle = g2;
+      ctx.beginPath(); ctx.arc(sx, sy, auraR, 0, Math.PI*2); ctx.fill();
+      // 촉수 8개
+      for (let i = 0; i < 8; i++) {
+        const ang = (i / 8) * Math.PI * 2 + t;
+        const len = 60 + Math.sin(t*3 + i) * 20;
+        const tx = sx + Math.cos(ang) * len;
+        const ty = sy + Math.sin(ang) * len;
+        ctx.strokeStyle = '#4a1a5a';
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.quadraticCurveTo(sx + Math.cos(ang)*40, sy + Math.sin(ang)*40 - 10, tx, ty);
+        ctx.stroke();
+        // 촉수 흡반
+        ctx.fillStyle = '#8844cc';
+        ctx.beginPath(); ctx.arc(tx, ty, 4, 0, Math.PI*2); ctx.fill();
+      }
+      // 몸통
+      ctx.fillStyle = '#5a1a70';
+      ctx.beginPath(); ctx.arc(sx, sy, 40, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#7a2a90';
+      ctx.beginPath(); ctx.arc(sx - 8, sy - 8, 32, 0, Math.PI * 2); ctx.fill();
+      // 눈 (거대, 광기)
+      const eyeGlow = 0.5 + Math.sin(t*4) * 0.5;
+      ctx.fillStyle = `rgba(255,${Math.floor(200-eyeGlow*100)},0,1)`;
+      ctx.beginPath(); ctx.arc(sx - 10, sy - 6, 8, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(sx + 12, sy - 4, 8, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.beginPath(); ctx.arc(sx - 10, sy - 6, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(sx + 12, sy - 4, 3, 0, Math.PI * 2); ctx.fill();
+      // 이름
+      ctx.font = 'bold 12px "Press Start 2P", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#000'; ctx.fillText('🐙 심연의 크라켄', sx + 1, sy - 60 + 1);
+      ctx.fillStyle = '#ff88ff'; ctx.fillText('🐙 심연의 크라켄', sx, sy - 60);
+      // HP 바
+      ctx.fillStyle = '#000'; ctx.fillRect(sx - 60, sy - 50, 120, 8);
+      ctx.fillStyle = '#ff4466'; ctx.fillRect(sx - 58, sy - 48, Math.floor(116 * (f.hp / f.maxHp)), 4);
+    }
+  }
+  ctx.restore();
+}
+
+// 산소 게이지 UI
+function drawOceanUI() {
+  if (!oceanMode || !ctx) return;
+  ctx.save();
+  const barW = 200, barH = 14;
+  const bx = 20, by = 60;
+  // 배경
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(bx - 4, by - 4, barW + 8, barH + 22);
+  // 라벨
+  ctx.font = 'bold 8px "Press Start 2P", monospace';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#88ccff';
+  ctx.fillText('🫧 산소', bx, by - 2);
+  // 게이지 배경
+  ctx.fillStyle = '#001133';
+  ctx.fillRect(bx, by, barW, barH);
+  // 게이지 채움
+  const pct = _oceanOxygen / 100;
+  ctx.fillStyle = pct > 0.5 ? '#44aaff' : pct > 0.2 ? '#ffdd44' : '#ff4466';
+  ctx.fillRect(bx, by, Math.floor(barW * pct), barH);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(Math.floor(_oceanOxygen) + '%', bx + barW - 40, by + 11);
+  ctx.restore();
+}
+
+// 심해 생물 공격 (플레이어 → 생물)
+function damageOceanCreatureAt(worldX, worldY, dmg) {
+  if (!oceanMode) return false;
+  for (const f of _oceanFishies) {
+    if (f.hp <= 0) continue;
+    const dx = worldX - f.x, dy = worldY - f.y;
+    if (Math.hypot(dx, dy) < f.size + 10) {
+      f.hp -= dmg;
+      if (typeof spawnDamageNumber === 'function') spawnDamageNumber(f.x, f.y, dmg, f.isBoss ? '#ff88ff' : '#ffcc44');
+      if (f.hp <= 0) {
+        // 드롭
+        if (f.type === 'shark' && typeof addToInventory === 'function') {
+          addToInventory(player, 'raw_tuna', 2);
+          player.gold = (player.gold || 0) + 20;
+        } else if (f.type === 'jelly' && typeof addToInventory === 'function') {
+          addToInventory(player, 'seaweed', 1);
+        } else if (f.type === 'kraken' && typeof addToInventory === 'function') {
+          addToInventory(player, 'kraken_ink', 5);
+          addToInventory(player, 'giant_pearl', 2);
+          player.gold = (player.gold || 0) + 500;
+          if (typeof addChatMessage === 'function') addChatMessage('🏆', '🐙 크라켄 처치! +500G +크라켄 먹물×5 +거대 진주×2', '#FFD700');
+        }
+      }
+      return true;
+    }
+  }
+  return false;
+}
+window.damageOceanCreatureAt = damageOceanCreatureAt;
+window.updateOcean = updateOcean;
+window.drawOcean = drawOcean;
+window.drawOceanCreatures = drawOceanCreatures;
+window.drawOceanUI = drawOceanUI;
+window.checkOceanEntryPrompt = checkOceanEntryPrompt;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🐲 월드보스 드래곤 렌더링 & 상호작용
@@ -21216,7 +21857,15 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyP') showCostumePanel();
   if (e.code === 'KeyO') showSettings();
   if (e.code === 'KeyV') parkVehicle();
-  if (e.code === 'KeyF') { if (tryOpenChest()) {} else if (tryBoardParkedVehicle()) {} else if (tryLootCorpseBox()) {} else { const nearDrop = droppedItems.some(d => { const now2 = Date.now(); if (now2 < d.dropProtectUntil && d.ownerId === player.name) return false; return Math.hypot(d.x-(player.x+player.w/2), d.y-(player.y+player.h/2)) < TILE*2.5; }); if (nearDrop) tryPickupDroppedItem(); else useItem(); } }
+  if (e.code === 'KeyF') {
+    // 심해 근처면 우선 잠수 시도 (물 근처 & 지상)
+    if (!oceanMode && !spaceMode && !dungeonMode && _oceanEnterHintEl) {
+      tryEnterOcean(); return;
+    }
+    // 심해에서 F 두 번 → 나가기 (수면 근처에서만)
+    if (oceanMode && player.y < TILE * 4) { exitOcean(); return; }
+    if (tryOpenChest()) {} else if (tryBoardParkedVehicle()) {} else if (tryLootCorpseBox()) {} else { const nearDrop = droppedItems.some(d => { const now2 = Date.now(); if (now2 < d.dropProtectUntil && d.ownerId === player.name) return false; return Math.hypot(d.x-(player.x+player.w/2), d.y-(player.y+player.h/2)) < TILE*2.5; }); if (nearDrop) tryPickupDroppedItem(); else useItem(); }
+  }
   if (e.code === 'KeyQ') placeBlock();
   if (e.code === 'KeyG') startFishing();
   // I 키: 펫 정보 보기
@@ -21447,6 +22096,8 @@ function gameLoop(timestamp) {
 
   updatePlayer(); updateAnimals(); updateParticles(); updateProjectiles();
   if (typeof updateTraders === 'function') updateTraders();
+  if (typeof updateOcean === 'function') updateOcean();
+  if (typeof checkOceanEntryPrompt === 'function') checkOceanEntryPrompt();
   // 저사양 모드: 물/낮밤 갱신을 격프레임으로 (시각 차이 거의 없음, CPU 절약)
   if (!_perfLow || frameCount % 2 === 0) { updateDayNight(); updateWater(); }
   updateWeather();
@@ -21519,10 +22170,18 @@ function gameLoop(timestamp) {
     _bgMtnCache = null;   // invalidate mountain cache on resize
   }
 
-  drawBackground();
+  // 심해/우주에서는 지상 배경 안 그림 (해당 모드가 자체 배경 그림)
+  if (!oceanMode) drawBackground();
+  // 🌊 심해 배경 오버레이 (있을 때만)
+  if (typeof drawOcean === 'function') drawOcean();
 
   // 🚀 타일 레이어 (베이스 캐시 + 실시간 애니메이션 오버레이)
-  renderTileLayer();
+  // 심해 모드에서는 심해 전용 스파스 렌더 사용 (renderTileLayer는 무거움)
+  if (oceanMode) {
+    if (typeof drawOceanResources === 'function') drawOceanResources();
+  } else {
+    renderTileLayer();
+  }
 
   // Only draw animals on screen
   animals.forEach(a => {
@@ -21566,10 +22225,14 @@ function gameLoop(timestamp) {
   updateGhostMode();
   drawPlayer(player);
   drawPlayerPet();
+  // 🐠 심해 생물 (플레이어 위)
+  if (typeof drawOceanCreatures === 'function') drawOceanCreatures();
   // 🧙 방랑 상인 NPC
   if (typeof drawTraders === 'function') drawTraders();
   // 🐲 월드보스 (플레이어 위에 오도록 뒤에 그림)
   if (typeof drawWorldBoss === 'function') drawWorldBoss();
+  // 🫧 심해 산소 게이지 UI
+  if (typeof drawOceanUI === 'function') drawOceanUI();
   // 다른 플레이어 펫도 그리기
   Object.values(otherPlayers).forEach(op => {
     if (!!op.inDungeon !== dungeonMode) return;
