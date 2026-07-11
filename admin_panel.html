@@ -8821,7 +8821,7 @@ function drawMinimap() {
   }
 
   // 🐲 월드보스 위치 (미니맵) — 우주 아닐 때만
-  if (worldBossState && !spaceMode && !dungeonMode && !oceanMode) {
+  if (false && worldBossState && !spaceMode && !dungeonMode && !oceanMode) {
     const bmx = (worldBossState.x / TILE) * scale;
     const bmy = (worldBossState.y / TILE) * scale * 1.5;
     if (bmx >= 0 && bmx <= 150 && bmy >= 0 && bmy <= 150) {
@@ -10764,6 +10764,19 @@ function attack(forceAttack) {
   let atkDmg = player.atk + (weapon?.atk || 0);
   if (_isMinigameServer) atkDmg = Math.min(atkDmg, 50); // 미니게임 데미지 캡
 
+  // ⚔️ 아레나 술래: 도망자 근접 시 즉시 처치 판정 (근접 3칸)
+  if (arenaState && arenaState.inMatch && arenaState.role === 'it' && arenaState.opponent) {
+    const opp = otherPlayers[arenaState.opponent];
+    if (opp) {
+      const dx = (opp.x + 12) - (player.x + player.w/2);
+      const dy = (opp.y + 24) - (player.y + player.h/2);
+      if (Math.hypot(dx, dy) < TILE * 2.5) {
+        if (window.arenaReportKill) window.arenaReportKill(arenaState.opponent);
+        showNotification('💥 도망자 처치!', { duration: 2000 });
+      }
+    }
+  }
+
   // 폭탄은 throwBomb으로
   if (hotItem === 'bomb' || hotItem === 'pvp_bomb') {
     throwBomb(); return;
@@ -10851,6 +10864,23 @@ function attack(forceAttack) {
         }
       }
     });
+  }
+
+  // 🧙 방랑 상인 피격 (근접 공격)
+  if (range <= 2 && typeof damageTraderAt === 'function') {
+    const attackX = player.x + (player.dir > 0 ? player.w : -range * TILE);
+    for (const t of (traderNPCs || [])) {
+      if (t.dead) continue;
+      const dist = Math.abs(t.x + 12 - (attackX + range * TILE / 2));
+      const distY = Math.abs(t.y - player.y);
+      if (dist < range * TILE && distY < TILE * 2) {
+        damageTraderAt(t.x + 12, t.y + 16, Math.max(1, atkDmg));
+        weaponHitFx(hotItem, weapon, t.x, t.y, player.dir, atkDmg, false);
+        if (hotItem && DURABILITY_MAX[hotItem] && ITEMS[hotItem]?.type === 'weapon') {
+          reduceDurability(hotItem, 1);
+        }
+      }
+    }
   }
 
   // Mining with broadcast
@@ -13019,7 +13049,6 @@ function showSettings() {
         <div style="font-size:8px;color:#FF4466;margin:14px 0 6px;letter-spacing:1px;">— 🛡️ 관리자 전용 —</div>
         <div style="display:flex;flex-direction:column;gap:6px;padding:6px 4px;">
           <button onclick="closePanel();showAdminPanel();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#3a1020,#1a0510);border-top:2px solid #7a2040;border-left:2px solid #7a2040;border-bottom:2px solid #200008;border-right:2px solid #200008;color:#ff88aa;cursor:pointer;letter-spacing:1px;">🛡️ 관리자 패널 열기</button>
-          <button onclick="closePanel();spawnWorldBoss();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#3a1010,#1a0505);border:2px solid #ff3355;color:#ffbbcc;cursor:pointer;">🐲 월드보스 소환</button>
           <div style="font-size:6.5px;color:#5a628f;text-align:center;line-height:1.6;">유저 관리·신고 확인·아이템 지급<br>단축키: [ \\ ] (백슬래시)</div>
         </div>
       ` : ''}
@@ -14868,9 +14897,214 @@ window.tryEnterOcean = tryEnterOcean;
 window.exitOcean = exitOcean;
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🐲 월드보스 (드래곤) — Firebase 동기화, 전 서버 공유
+// 🐲 월드보스 드래곤 렌더링 & 상호작용
 // ═══════════════════════════════════════════════════════════════════════════
-function initWorldBoss() {
+let _dragonAnimT = 0;
+function drawWorldBoss() { return; /* 비활성화 */
+  if (!worldBossState || !ctx || spaceMode || dungeonMode || oceanMode) return;
+  _dragonAnimT += 0.06;
+  const bx = worldBossState.x - camera.x;
+  const by = worldBossState.y - camera.y;
+  // 화면 밖이면 스킵 (안 그림)
+  if (bx < -300 || bx > canvas.width + 300 || by < -200 || by > canvas.height + 200) return;
+
+  const sway = Math.sin(_dragonAnimT) * 8;
+  const flap = Math.sin(_dragonAnimT * 4) * 0.4;
+  const cx = bx + sway;
+  const cy = by;
+
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+
+  // ── 그림자
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath(); ctx.ellipse(cx + 60, cy + 130, 80, 12, 0, 0, Math.PI*2); ctx.fill();
+
+  // ── 오라 (빨간 불꽃)
+  const auraR = 90 + Math.sin(_dragonAnimT*2) * 8;
+  const grad = ctx.createRadialGradient(cx+60, cy+50, 20, cx+60, cy+50, auraR);
+  grad.addColorStop(0, 'rgba(255,80,80,0.35)');
+  grad.addColorStop(0.5, 'rgba(255,40,60,0.15)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.arc(cx+60, cy+50, auraR, 0, Math.PI*2); ctx.fill();
+
+  const px = 6; // 픽셀 사이즈
+  // 픽셀 아트 그리기 헬퍼
+  function pix(dx, dy, w, h, col) {
+    ctx.fillStyle = col;
+    ctx.fillRect(cx + dx*px, cy + dy*px, w*px, h*px);
+  }
+
+  // ── 왼쪽 날개 (플랩)
+  ctx.save();
+  ctx.translate(cx + 30, cy + 40);
+  ctx.rotate(-0.3 - flap);
+  ctx.translate(-(cx + 30), -(cy + 40));
+  ctx.fillStyle = '#5a1020';
+  ctx.beginPath();
+  ctx.moveTo(cx + 30, cy + 40);
+  ctx.lineTo(cx - 30, cy + 10);
+  ctx.lineTo(cx - 10, cy + 50);
+  ctx.lineTo(cx - 40, cy + 70);
+  ctx.lineTo(cx + 20, cy + 55);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#801830';
+  ctx.beginPath();
+  ctx.moveTo(cx + 30, cy + 45);
+  ctx.lineTo(cx - 5, cy + 30);
+  ctx.lineTo(cx + 5, cy + 50);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // ── 오른쪽 날개
+  ctx.save();
+  ctx.translate(cx + 90, cy + 40);
+  ctx.rotate(0.3 + flap);
+  ctx.translate(-(cx + 90), -(cy + 40));
+  ctx.fillStyle = '#5a1020';
+  ctx.beginPath();
+  ctx.moveTo(cx + 90, cy + 40);
+  ctx.lineTo(cx + 150, cy + 10);
+  ctx.lineTo(cx + 130, cy + 50);
+  ctx.lineTo(cx + 160, cy + 70);
+  ctx.lineTo(cx + 100, cy + 55);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#801830';
+  ctx.beginPath();
+  ctx.moveTo(cx + 90, cy + 45);
+  ctx.lineTo(cx + 125, cy + 30);
+  ctx.lineTo(cx + 115, cy + 50);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // ── 꼬리
+  ctx.fillStyle = '#3a0810';
+  ctx.beginPath();
+  ctx.moveTo(cx + 40, cy + 90);
+  ctx.quadraticCurveTo(cx - 10, cy + 130, cx - 40, cy + 100);
+  ctx.quadraticCurveTo(cx - 30, cy + 115, cx - 10, cy + 120);
+  ctx.quadraticCurveTo(cx + 20, cy + 110, cx + 40, cy + 90);
+  ctx.fill();
+  // 꼬리 끝 가시
+  ctx.fillStyle = '#ff4466';
+  ctx.beginPath();
+  ctx.moveTo(cx - 40, cy + 100); ctx.lineTo(cx - 55, cy + 92); ctx.lineTo(cx - 45, cy + 108);
+  ctx.closePath(); ctx.fill();
+
+  // ── 몸통 (픽셀 아트) - 어두운 빨강 + 하이라이트
+  const body = '#5a1020', bodyDark = '#3a0810', bodyLight = '#801830';
+  // 몸 큰 덩어리
+  pix(6, 12, 12, 10, body);
+  pix(7, 11, 10, 1, body);
+  pix(7, 22, 10, 1, body);
+  pix(5, 14, 1, 6, body);
+  pix(18, 14, 1, 6, body);
+  // 배 하이라이트
+  pix(8, 18, 8, 3, bodyLight);
+  // 등뼈 (가시)
+  ctx.fillStyle = '#ff6644';
+  for (let i = 0; i < 5; i++) {
+    ctx.beginPath();
+    ctx.moveTo(cx + (8 + i*2)*px, cy + 12*px);
+    ctx.lineTo(cx + (9 + i*2)*px, cy + 7*px);
+    ctx.lineTo(cx + (10 + i*2)*px, cy + 12*px);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // ── 목
+  pix(15, 8, 4, 5, body);
+  pix(16, 6, 4, 3, body);
+
+  // ── 머리
+  pix(17, 3, 8, 6, body);
+  pix(18, 2, 6, 1, body);
+  pix(17, 9, 8, 1, body);
+  // 뿔
+  ctx.fillStyle = '#e0d0a0';
+  ctx.beginPath(); ctx.moveTo(cx + 18*px, cy + 3*px); ctx.lineTo(cx + 17*px, cy - 3*px); ctx.lineTo(cx + 20*px, cy + 2*px); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(cx + 23*px, cy + 3*px); ctx.lineTo(cx + 25*px, cy - 3*px); ctx.lineTo(cx + 24*px, cy + 2*px); ctx.fill();
+  // 눈 (빨간 광채)
+  const eyeGlow = 0.6 + Math.sin(_dragonAnimT*3) * 0.4;
+  ctx.fillStyle = `rgba(255, ${Math.round(80+eyeGlow*80)}, 60, 1)`;
+  ctx.fillRect(cx + 19*px, cy + 5*px, 2*px, 1*px);
+  ctx.fillRect(cx + 22*px, cy + 5*px, 2*px, 1*px);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(cx + 20*px, cy + 5*px, 1*px, 1*px);
+  ctx.fillRect(cx + 23*px, cy + 5*px, 1*px, 1*px);
+  // 콧구멍
+  ctx.fillStyle = '#1a0000';
+  ctx.fillRect(cx + 24*px, cy + 7*px, 1*px, 1*px);
+  // 이빨
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(cx + 24*px, cy + 8*px, 1*px, 1*px);
+
+  // ── 발톱 (4개 다리)
+  ctx.fillStyle = bodyDark;
+  pix(7, 21, 2, 3, bodyDark);
+  pix(15, 21, 2, 3, bodyDark);
+  // 발톱 하이라이트
+  ctx.fillStyle = '#ffcc66';
+  ctx.fillRect(cx + 7*px, cy + 23*px, px, px);
+  ctx.fillRect(cx + 8*px, cy + 23*px, px, px);
+  ctx.fillRect(cx + 15*px, cy + 23*px, px, px);
+  ctx.fillRect(cx + 16*px, cy + 23*px, px, px);
+
+  // ── 불꽃 브레스 (숨쉬듯이)
+  if (Math.sin(_dragonAnimT*0.7) > 0.3) {
+    const bLen = 40 + Math.sin(_dragonAnimT*3)*15;
+    const bx2 = cx + 25*px;
+    const by2 = cy + 7*px;
+    const fgrad = ctx.createLinearGradient(bx2, by2, bx2 + bLen, by2);
+    fgrad.addColorStop(0, 'rgba(255,220,60,0.9)');
+    fgrad.addColorStop(0.5, 'rgba(255,120,40,0.7)');
+    fgrad.addColorStop(1, 'rgba(255,40,20,0)');
+    ctx.fillStyle = fgrad;
+    ctx.beginPath();
+    ctx.moveTo(bx2, by2 - 6);
+    ctx.quadraticCurveTo(bx2 + bLen*0.5, by2 - 15, bx2 + bLen, by2);
+    ctx.quadraticCurveTo(bx2 + bLen*0.5, by2 + 15, bx2, by2 + 6);
+    ctx.closePath(); ctx.fill();
+  }
+
+  ctx.restore();
+
+  // ── 이름 태그
+  ctx.font = 'bold 12px "Press Start 2P", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#000';
+  ctx.fillText(worldBossState.name, cx + 60 + 1, cy - 12 + 1);
+  ctx.fillStyle = '#ff5577';
+  ctx.fillText(worldBossState.name, cx + 60, cy - 12);
+}
+
+// 🐲 드래곤 클릭 = 딜 넣기 (canvas 좌표에 있으면)
+function checkWorldBossHit(worldX, worldY) {
+  if (!worldBossState) return false;
+  const bx = worldBossState.x, by = worldBossState.y;
+  const dx = worldX - (bx + 60), dy = worldY - (by + 60);
+  if (Math.hypot(dx, dy) < 90) {
+    // 플레이어 공격력 기반 딜 (기본 20 + 무기 파워)
+    const dmg = Math.max(10, (player && player.atk) ? player.atk * 2 : 20);
+    if (window.dealWorldBossDamage) window.dealWorldBossDamage(dmg);
+    // 타격 이펙트
+    for (let i = 0; i < 8; i++) {
+      particles.push({
+        x: bx + 60 + (Math.random()-0.5)*40, y: by + 60 + (Math.random()-0.5)*40,
+        vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4 - 1,
+        life: 20, maxLife: 20, color: '#ff4466', size: 3
+      });
+    }
+    spawnDamageNumber(bx + 60, by + 30, dmg, '#ff8844');
+    return true;
+  }
+  return false;
+}
+window.checkWorldBossHit = checkWorldBossHit;
+window.drawWorldBoss = drawWorldBoss;
+
+
+function initWorldBoss() { return; /* 월드보스 시스템 비활성화 */
   if (isOffline || !supabase || !supabase.db) return;
   try {
     _worldBossRef = supabase.db.ref('worldBoss/current');
@@ -14882,21 +15116,25 @@ function initWorldBoss() {
   } catch(e) { console.warn('worldBoss init 실패', e); }
 }
 // 관리자용: 월드보스 소환
-window.spawnWorldBoss = async function() {
-  if (isOffline || !supabase || !supabase.db) return;
+window.spawnWorldBoss = async function() { return; /* 비활성화 */
+  if (isOffline || !supabase || !supabase.db) { showNotification('❌ 온라인 모드에서만'); return; }
+  // 소환자 근처에 배치 (하늘 100 대신 실제 보이는 위치)
+  const spawnX = player ? Math.max(400, player.x + 400) : WORLD_W * TILE / 2;
+  const spawnY = player ? Math.max(100, player.y - 100) : 300;
   const boss = {
     id: 'wb_' + Date.now(),
     name: '고대 드래곤',
     hp: 5000, maxHp: 5000,
-    x: WORLD_W * TILE / 2, y: 100,
+    x: spawnX, y: spawnY,
     spawnAt: Date.now(),
     participants: {}
   };
   await supabase.db.ref('worldBoss/current').set(boss);
-  addChatMessage('경보', '🐲 고대 드래곤이 강림했습니다!', '#FF4466');
+  addChatMessage('경보', '🐲 고대 드래곤이 강림했습니다! 미니맵을 확인하세요!', '#FF4466');
+  showNotification('🐲 드래곤 소환됨! 접근해서 공격!', { duration: 4000 });
 };
 // 딜 넣기 (플레이어가 공격 시)
-window.dealWorldBossDamage = async function(dmg) {
+window.dealWorldBossDamage = async function(dmg) { return; /* 비활성화 */
   if (!worldBossState || !worldBossState.hp || !supabase || !supabase.db) return;
   const bref = supabase.db.ref('worldBoss/current');
   let cleared = false;
@@ -14911,131 +15149,218 @@ window.dealWorldBossDamage = async function(dmg) {
     .transaction(cur => (cur || 0) + dmg);
   _worldBossMyDmg += dmg;
   if (cleared) {
-    // 처치 보상 분배 (상위 3명)
+    // 🏆 처치 보상 분배 (딜량 상위 5명)
     const snap = await bref.get();
     const v = snap.val();
     if (v && v.participants) {
-      const top = Object.entries(v.participants).sort((a,b)=>b[1]-a[1]).slice(0,3);
-      const myName = name.replace(/[^\w가-힣]/g, '_');
+      const top = Object.entries(v.participants).sort((a,b)=>b[1]-a[1]).slice(0,5);
+      const myName = (player.name || '').replace(/[^\w가-힣]/g, '_');
       const rank = top.findIndex(t => t[0] === myName);
       if (rank >= 0) {
-        const rewards = [1000, 500, 250];
-        player.gold = (player.gold || 0) + rewards[rank];
-        addToInventory(player, 'giant_pearl', rank === 0 ? 2 : 1);
-        showNotification(`🏆 월드보스 처치 ${rank+1}위! +${rewards[rank]}G +거대 진주`, { duration: 4000 });
-        addChatMessage('보상', `🏆 ${player.name} 월드보스 ${rank+1}위!`, '#FFD700');
+        // 순위별 보상: 1위 압도적, 참여자는 최소 보상
+        const rewards = [
+          { gold: 2000, item: 'giant_pearl',  cnt: 3, medal: '🥇 1위' },
+          { gold: 1000, item: 'giant_pearl',  cnt: 2, medal: '🥈 2위' },
+          { gold: 500,  item: 'kraken_ink',   cnt: 3, medal: '🥉 3위' },
+          { gold: 250,  item: 'kraken_ink',   cnt: 2, medal: '4위' },
+          { gold: 150,  item: 'kraken_ink',   cnt: 1, medal: '5위' },
+        ];
+        const r = rewards[rank];
+        player.gold = (player.gold || 0) + r.gold;
+        if (typeof addToInventory === 'function') addToInventory(player, r.item, r.cnt);
+        showNotification(`🏆 월드보스 처치! ${r.medal} +${r.gold}G +${ITEMS[r.item]?.name || r.item}×${r.cnt}`, { duration: 5000 });
+        addChatMessage('🏆 처치보상', `${r.medal} ${player.name}: +${r.gold}G +${ITEMS[r.item]?.name || r.item}×${r.cnt}`, '#FFD700');
+      } else if (parts[myName] > 0) {
+        // 참여했지만 top 5 밖 → 참여상
+        player.gold = (player.gold || 0) + 50;
+        showNotification('🎖️ 참여 보상: +50G', { duration: 3000 });
       }
     }
     await bref.remove();
+    _worldBossMyDmg = 0;
   }
 };
 function updateWorldBossHUD() {
-  let hud = document.getElementById('worldBossHUD');
+  // 월드보스 시스템 비활성화 — HUD 제거
+  const hud = document.getElementById('worldBossHUD');
+  if (hud) hud.remove();
+  const arr = document.getElementById('bossDirArrow');
+  if (arr) arr.remove();
+  return;
+  let hud2 = document.getElementById('worldBossHUD');
   if (!worldBossState) { if (hud) hud.remove(); return; }
   if (!hud) {
     hud = document.createElement('div');
     hud.id = 'worldBossHUD';
     hud.style.cssText = `
-      position:fixed; top:14px; left:50%; transform:translateX(-50%);
-      z-index:600; min-width:min(520px, 90vw); pointer-events:none;
-      font-family:'Press Start 2P',monospace;
-      animation: bossHudPulse 2.4s ease-in-out infinite;
+      position:fixed; top:16px; left:50%; transform:translateX(-50%);
+      z-index:600; width: min(620px, 92vw); pointer-events:none;
+      font-family:'Press Start 2P', monospace;
+      image-rendering: pixelated;
     `;
-    // 애니메이션 CSS
     if (!document.getElementById('bossHudStyle')) {
       const st = document.createElement('style');
       st.id = 'bossHudStyle';
       st.textContent = `
-        @keyframes bossHudPulse {
-          0%,100% { filter: drop-shadow(0 0 8px rgba(255,50,80,0.5)); }
-          50%     { filter: drop-shadow(0 0 18px rgba(255,80,120,0.85)); }
+        @keyframes bossGlow {
+          0%,100% { box-shadow: 0 0 0 2px #1a0008, 0 0 0 4px #661122, 0 0 24px rgba(255,60,80,0.55), inset 0 0 30px rgba(80,0,20,0.6); }
+          50%     { box-shadow: 0 0 0 2px #1a0008, 0 0 0 4px #ff3355, 0 0 40px rgba(255,80,120,0.85), inset 0 0 30px rgba(120,10,30,0.7); }
         }
-        @keyframes bossHpFlash {
-          0%,100% { background-position: 0% 0%; }
-          50%     { background-position: 100% 0%; }
+        @keyframes bossHpShimmer {
+          0%   { background-position: 0 0; }
+          100% { background-position: 60px 0; }
+        }
+        @keyframes bossTitleFlicker {
+          0%,49%,52%,100% { opacity: 1; }
+          50%,51% { opacity: 0.7; }
+        }
+        .boss-hud-frame {
+          background: repeating-linear-gradient(45deg, #12000a, #12000a 4px, #1a0410 4px, #1a0410 8px);
+          border-top: 3px solid #ff5577;
+          border-left: 3px solid #ff5577;
+          border-right: 3px solid #440810;
+          border-bottom: 3px solid #440810;
+          padding: 12px 18px;
+          animation: bossGlow 2.2s ease-in-out infinite;
+          position: relative;
+        }
+        .boss-hud-frame::before {
+          content: '';
+          position: absolute; inset: 3px;
+          border: 1px solid #ff8899;
+          pointer-events: none;
+          opacity: 0.35;
+        }
+        .boss-hp-outer {
+          background: #0a0004;
+          border-top: 2px solid #200008;
+          border-left: 2px solid #200008;
+          border-right: 2px solid #661122;
+          border-bottom: 2px solid #661122;
+          height: 26px;
+          position: relative;
+          overflow: hidden;
         }
         .boss-hp-fill {
-          background: linear-gradient(90deg, #ff2244 0%, #ff6644 30%, #ffaa44 50%, #ff6644 70%, #ff2244 100%);
-          background-size: 200% 100%;
-          animation: bossHpFlash 1.6s linear infinite;
-          height:100%; transition: width 0.4s cubic-bezier(.6,-0.2,.4,1.2);
-          box-shadow: 0 0 12px rgba(255,80,80,0.7) inset, 0 0 8px rgba(255,60,60,0.5);
+          background:
+            repeating-linear-gradient(90deg,
+              rgba(255,255,255,0.15) 0 4px,
+              transparent 4px 12px),
+            linear-gradient(90deg, #ff2244 0%, #ff6644 30%, #ffaa66 55%, #ff6644 80%, #ff2244 100%);
+          height: 100%;
+          transition: width 0.35s cubic-bezier(.4,-0.2,.4,1.4);
+          animation: bossHpShimmer 1.2s linear infinite;
+          box-shadow:
+            inset 0 3px 0 rgba(255,220,180,0.35),
+            inset 0 -3px 0 rgba(80,0,20,0.7);
+        }
+        .boss-rank-badge {
+          display: inline-block;
+          padding: 3px 6px;
+          background: linear-gradient(180deg, #2a1a05 0%, #100804 100%);
+          border-top: 1px solid #665533;
+          border-left: 1px solid #665533;
+          border-right: 1px solid #100804;
+          border-bottom: 1px solid #100804;
+          font-size: 7px;
+          margin-right: 4px;
         }
       `;
       document.head.appendChild(st);
     }
     document.body.appendChild(hud);
   }
+
   const pct = Math.max(0, worldBossState.hp / worldBossState.maxHp);
   const parts = worldBossState.participants || {};
-  const top3 = Object.entries(parts).sort((a,b)=>b[1]-a[1]).slice(0,3);
-  const partCount = Object.keys(parts).length;
+  // 🏆 딜량 순으로 정렬 (상위 3명)
+  const ranked = Object.entries(parts).sort((a,b)=>b[1]-a[1]);
+  const top3 = ranked.slice(0, 3);
+  const partCount = ranked.length;
 
-  // 화면 밖 방향 계산
-  const bossX = worldBossState.x, bossY = worldBossState.y;
-  const cx = (player && camera) ? (player.x + player.w/2) : 0;
-  const cy = (player && camera) ? (player.y + player.h/2) : 0;
-  const dx = bossX - cx, dy = bossY - cy;
-  const dist = Math.hypot(dx, dy);
-  const distTiles = Math.round(dist / (TILE || 32));
-  const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+  // 거리 계산 (내 위치 기준)
+  const pcx = (player && player.x != null) ? (player.x + player.w/2) : 0;
+  const pcy = (player && player.y != null) ? (player.y + player.h/2) : 0;
+  const dx = worldBossState.x + 60 - pcx;
+  const dy = worldBossState.y + 60 - pcy;
+  const distTiles = Math.round(Math.hypot(dx, dy) / (TILE || 32));
+  // 방향 화살표 (8방향)
+  const angDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+  const compass = (angDeg > -22.5 && angDeg <= 22.5) ? '➡️'
+    : (angDeg > 22.5 && angDeg <= 67.5) ? '↘️'
+    : (angDeg > 67.5 && angDeg <= 112.5) ? '⬇️'
+    : (angDeg > 112.5 && angDeg <= 157.5) ? '↙️'
+    : (angDeg > 157.5 || angDeg <= -157.5) ? '⬅️'
+    : (angDeg > -157.5 && angDeg <= -112.5) ? '↖️'
+    : (angDeg > -112.5 && angDeg <= -67.5) ? '⬆️'
+    : '↗️';
+
+  // 내 랭킹
+  const myName = player ? player.name : '';
+  const myRank = ranked.findIndex(r => r[0] === myName);
+  const myDmg = myRank >= 0 ? ranked[myRank][1] : _worldBossMyDmg;
 
   hud.innerHTML = `
-    <div style="
-      background: linear-gradient(180deg, rgba(20,0,10,0.96) 0%, rgba(45,5,20,0.94) 100%);
-      border: 3px solid transparent;
-      border-image: linear-gradient(180deg, #ff5577, #661122) 1;
-      padding: 10px 18px 12px;
-      position: relative;
-    ">
-      <!-- 상단 라벨 -->
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-        <div style="display:flex; align-items:center; gap:8px;">
-          <span style="font-size:16px;">🐲</span>
-          <span style="color:#ff6688; font-size:11px; letter-spacing:2px; text-shadow: 0 0 8px rgba(255,100,120,0.7);">
-            WORLD BOSS
-          </span>
-          <span style="color:#ffbbcc; font-size:9px;">${worldBossState.name}</span>
+    <div class="boss-hud-frame">
+      <!-- 상단: 타이틀 -->
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:22px; filter: drop-shadow(0 0 6px #ff4466);">🐲</span>
+          <div>
+            <div style="
+              color:#ff4466; font-size:9px; letter-spacing:3px;
+              text-shadow: 2px 2px 0 #000, -1px -1px 0 #660011, 0 0 10px rgba(255,80,120,0.9);
+              animation: bossTitleFlicker 3s infinite;
+            ">▸ WORLD BOSS ◂</div>
+            <div style="color:#ffbbcc; font-size:11px; margin-top:4px; text-shadow: 1px 1px 0 #000;">
+              ${worldBossState.name}
+            </div>
+          </div>
         </div>
-        <div style="color:#aa6677; font-size:8px;">
-          👥 ${partCount}명 참전
-          <span style="color:#ff8899; margin-left:6px;">↖ ${distTiles}칸</span>
+        <div style="text-align:right;">
+          <div style="color:#ffaa66; font-size:9px;">${compass} ${distTiles}칸</div>
+          <div style="color:#8890bb; font-size:7px; margin-top:3px;">👥 참전 ${partCount}명</div>
         </div>
       </div>
 
       <!-- HP 바 -->
-      <div style="
-        background: #10000a; height: 22px;
-        border: 2px solid #661122;
-        box-shadow: 0 0 15px rgba(255,50,80,0.4) inset, 0 2px 4px rgba(0,0,0,0.8);
-        position: relative; overflow: hidden;
-      ">
-        <div class="boss-hp-fill" style="width: ${pct*100}%;"></div>
-        <!-- HP 텍스트 오버레이 -->
+      <div class="boss-hp-outer">
+        <div class="boss-hp-fill" style="width: ${(pct*100).toFixed(2)}%;"></div>
         <div style="
-          position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-          color: #fff; font-size: 10px; letter-spacing: 1px;
-          text-shadow: 1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000, 0 0 6px rgba(255,80,80,0.9);
+          position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+          color:#fff; font-size:10px; letter-spacing:1px;
+          text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
         ">
           ${worldBossState.hp.toLocaleString()} / ${worldBossState.maxHp.toLocaleString()}
-          <span style="margin-left:8px; color:#ffdd88;">${(pct*100).toFixed(1)}%</span>
+          <span style="margin-left:10px; color:#ffee88;">${(pct*100).toFixed(1)}%</span>
         </div>
       </div>
 
-      <!-- 딜링 랭킹 + 내 딜 -->
-      <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:7.5px;">
-        <div style="color:#8890bb;">
-          ${top3.map((t, i) => `<span style="color:${['#ffd700','#c8c8dd','#cd7f32'][i]}; margin-right:8px;">${['🥇','🥈','🥉'][i]} ${t[0]} <span style="color:#ff8899;">${t[1].toLocaleString()}</span></span>`).join('')}
+      <!-- 랭킹 (상위 3명) -->
+      <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+        <div style="display:flex; flex-wrap:wrap; gap:6px; font-size:8px;">
+          ${top3.length === 0
+            ? '<span style="color:#5a628f;">누가 먼저 딜을 넣을 것인가...</span>'
+            : top3.map((t, i) => {
+                const medal = ['🥇','🥈','🥉'][i];
+                const color = ['#ffd700','#c8c8dd','#cd7f32'][i];
+                const isMe = t[0] === myName;
+                return `<span class="boss-rank-badge" style="color:${color}; ${isMe?'outline:1px solid #ffdd66;':''}">
+                  ${medal} ${t[0]}${isMe?'(나)':''}
+                  <span style="color:#ff9977;">${t[1].toLocaleString()}</span>
+                </span>`;
+              }).join('')
+          }
         </div>
-        <div style="color:${_worldBossMyDmg > 0 ? '#ffdd66' : '#5a628f'};">
-          내 딜: <span style="color:#ff8899;">${_worldBossMyDmg.toLocaleString()}</span>
+        <div style="font-size:8px; color:#8890bb; text-align:right;">
+          ${myRank >= 0 ? `내 순위: <span style="color:#ffdd66;">#${myRank+1}</span>` : ''}
+          <span style="margin-left:8px;">내 딜: <span style="color:#ff9977;">${myDmg.toLocaleString()}</span></span>
         </div>
       </div>
     </div>
   `;
-
-  // 화면 밖이면 방향 화살표 표시
-  updateBossDirectionArrow(bossX, bossY);
+  // 화면 밖 방향 화살표
+  updateBossDirectionArrow(worldBossState.x + 60, worldBossState.y + 60);
 }
 
 // 🎯 화면 밖 보스 방향 화살표
@@ -15096,109 +15421,503 @@ function updateBossDirectionArrow(bossX, bossY) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ⚔️ PVP 아레나 — 1v1 매칭 + 랭킹
+// ⚔️ PVP 아레나 (술래잡기) — 별도 임시 서버, 술래는 도망자 처치 / 도망자는 60초 생존
 // ═══════════════════════════════════════════════════════════════════════════
+let arenaSavedState = null;
+let _arenaTimerId = null;
+let _arenaTimeLeft = 0;
+
+// ─── 창 닫기/새로고침 시 즉시 항복 (한 번만 등록) ───
+if (!window._arenaBeforeUnloadInstalled) {
+  window._arenaBeforeUnloadInstalled = true;
+  window.addEventListener('beforeunload', () => {
+    if (!arenaState || !arenaState.inMatch || !arenaState.matchId || !supabase || !supabase.db) return;
+    try {
+      // heartbeat 강제 만료 (0으로) → 상대가 10초 대기 없이 감지
+      supabase.db.ref('arena/matches/' + arenaState.matchId + '/hb/' + player.name).set(0);
+      // 즉시 승자 확정 (내 이탈 = 상대 승)
+      supabase.db.ref('arena/matches/' + arenaState.matchId).update({
+        winner: arenaState.opponent,
+        forfeitBy: player.name,
+      });
+      // 내 rageQuit 카운트 증가 (자기신고)
+      supabase.db.ref('users/' + player.name + '/rageQuits').transaction(cur => (cur || 0) + 1);
+    } catch(e) {}
+  });
+}
+
 async function joinArenaQueue() {
-  if (isOffline || !supabase || !supabase.db || !player) return;
+  if (isOffline || !supabase || !supabase.db || !player) { showNotification('❌ 온라인만'); return; }
+  if (arenaState) { showNotification('⚠️ 이미 경기 중'); return; }
   const name = player.name;
   const qRef = supabase.db.ref('arena/queue');
-  // 다른 대기자 찾기
   const snap = await qRef.get();
   const queue = snap.val() || {};
   const others = Object.entries(queue).filter(([k,v]) => k !== name && v && Date.now() - v.at < 60000);
   if (others.length > 0) {
-    // 매칭 성사
-    const [oppName, oppData] = others[0];
+    const [oppName] = others[0];
     const matchId = 'm_' + [name, oppName].sort().join('_') + '_' + Date.now();
+    const roles = Math.random() < 0.5 ? { it: name, run: oppName } : { it: oppName, run: name };
     await supabase.db.ref('arena/matches/' + matchId).set({
-      p1: name, p2: oppName, start: Date.now(),
-      p1_hp: 100, p2_hp: 100, winner: null
+      p1: name, p2: oppName,
+      itPlayer: roles.it, runPlayer: roles.run,
+      start: Date.now(), duration: 60,
+      winner: null, phase: 'reveal', createdBy: name,
     });
     await qRef.child(oppName).remove();
-    startArenaMatch(matchId, oppName);
+    await qRef.child(name).remove();
+    enterArenaMatch(matchId);
   } else {
-    // 대기열 등록
     await qRef.child(name).set({ at: Date.now(), rating: arenaRating });
-    showNotification('⚔️ 매칭 대기 중... (최대 60초)', { duration: 3000 });
-    // 대기열 리스너
+    showArenaWaitingUI();
     _arenaQueueRef = supabase.db.ref('arena/matches');
     _arenaQueueRef.on('child_added', snap2 => {
       const m = snap2.val();
       if (!m || (m.p1 !== name && m.p2 !== name)) return;
-      const opp = m.p1 === name ? m.p2 : m.p1;
-      startArenaMatch(snap2.key, opp);
+      hideArenaWaitingUI();
+      _arenaQueueRef.off(); _arenaQueueRef = null;
+      enterArenaMatch(snap2.key);
     });
-    // 60초 후 자동 취소
     setTimeout(async () => {
       const st = await qRef.child(name).get();
-      if (st.exists()) { await qRef.child(name).remove(); showNotification('⏰ 매칭 실패'); }
+      if (st.exists()) {
+        await qRef.child(name).remove();
+        hideArenaWaitingUI();
+        if (_arenaQueueRef) { _arenaQueueRef.off(); _arenaQueueRef = null; }
+        showNotification('⏰ 매칭 실패 (60초 초과)');
+      }
     }, 60000);
   }
 }
-function startArenaMatch(matchId, opponent) {
-  if (arenaState) return;
-  arenaState = { inMatch: true, opponent, matchId, myHp: 100, oppHp: 100, start: Date.now() };
-  if (_arenaQueueRef) { _arenaQueueRef.off(); _arenaQueueRef = null; }
-  _arenaMatchRef = supabase.db.ref('arena/matches/' + matchId);
-  _arenaMatchRef.on('value', snap => {
-    const m = snap.val();
-    if (!m) { endArenaMatch(null); return; }
-    const myKey = m.p1 === player.name ? 'p1_hp' : 'p2_hp';
-    const oppKey = m.p1 === player.name ? 'p2_hp' : 'p1_hp';
-    arenaState.myHp = m[myKey]; arenaState.oppHp = m[oppKey];
-    if (m.winner) { endArenaMatch(m.winner === player.name); }
-    updateArenaHUD();
-  });
-  showNotification(`⚔️ 매칭! vs ${opponent}`, { duration: 3000 });
-  addChatMessage('아레나', `⚔️ ${player.name} vs ${opponent}`, '#FF88AA');
+
+function showArenaWaitingUI() {
+  let ui = document.getElementById('arenaWaitingUI');
+  if (ui) return;
+  ui = document.createElement('div');
+  ui.id = 'arenaWaitingUI';
+  ui.className = 'pixel-modal-overlay';
+  ui.style.zIndex = '99997';
+  ui.innerHTML = `
+    <div class="pixel-modal" style="width: min(360px, 90vw);">
+      <div class="panel-header">
+        <span class="panel-title">⚔️ 매칭 대기 중</span>
+      </div>
+      <div style="padding: 24px 20px; text-align: center;">
+        <div style="font-size: 48px; margin: 12px 0;" id="arenaWaitSpin">⚔️</div>
+        <div style="font-size: 9px; color: #aab4d0; margin-bottom: 16px;">
+          상대를 찾는 중...<br>
+          <span style="color:#8890bb; font-size:7px;">최대 60초 대기</span>
+        </div>
+        <button onclick="cancelArenaQueue()"
+          style="font-family:'Press Start 2P',monospace; font-size:8px; padding:8px 18px;
+          background: linear-gradient(180deg, #2a1020, #180818);
+          border-top:2px solid #883355; border-left:2px solid #883355;
+          border-bottom:2px solid #220011; border-right:2px solid #220011;
+          color:#ffcccc; cursor:pointer; box-shadow: 2px 2px 0 #000;">취소</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ui);
+  let a = 0;
+  ui._spin = setInterval(() => {
+    const el = document.getElementById('arenaWaitSpin');
+    if (!el) { clearInterval(ui._spin); return; }
+    a += 20; el.style.transform = 'rotate(' + a + 'deg)';
+  }, 60);
 }
-window.arenaAttack = async function() {
-  if (!arenaState || !_arenaMatchRef) return;
-  const myKey = 'p1_hp'; // 서버에서 계산해야 하지만 단순화
-  const oppKey = arenaState.opponent;
-  await _arenaMatchRef.transaction(m => {
-    if (!m || m.winner) return m;
-    const isP1 = m.p1 === player.name;
-    const dmgKey = isP1 ? 'p2_hp' : 'p1_hp';
-    m[dmgKey] = Math.max(0, (m[dmgKey] || 100) - 10);
-    if (m[dmgKey] <= 0) m.winner = player.name;
-    return m;
-  });
+function hideArenaWaitingUI() {
+  const ui = document.getElementById('arenaWaitingUI');
+  if (ui) { if (ui._spin) clearInterval(ui._spin); ui.remove(); }
+}
+window.cancelArenaQueue = async function() {
+  if (!supabase || !player) return;
+  await supabase.db.ref('arena/queue/' + player.name).remove();
+  if (_arenaQueueRef) { _arenaQueueRef.off(); _arenaQueueRef = null; }
+  hideArenaWaitingUI();
 };
+
+async function enterArenaMatch(matchId) {
+  if (arenaState) return;
+  const mref = supabase.db.ref('arena/matches/' + matchId);
+  const snap = await mref.get();
+  const m = snap.val(); if (!m) return;
+  const opp = m.p1 === player.name ? m.p2 : m.p1;
+  arenaState = { inMatch: true, opponent: opp, matchId, role: null, phase: 'reveal', winner: null };
+  _arenaMatchRef = mref;
+
+  // ─── 원래 서버 & 인벤/장비/체력/위치 백업 ───
+  arenaSavedState = {
+    // 서버 정보
+    serverId: currentServerId,
+    serverPassword: currentServerPassword,
+    serverIsOfficial: currentServerIsOfficial,
+    // 플레이어 데이터
+    inventory: JSON.parse(JSON.stringify(player.inventory || [])),
+    equipment: JSON.parse(JSON.stringify(player.equipment || {})),
+    hotbar: JSON.parse(JSON.stringify(player.hotbar || [])),
+    hp: player.hp, maxHp: player.maxHp,
+    x: player.x, y: player.y,
+  };
+
+  // ─── 🎯 별도 아레나 서버로 이동 (다른 유저 안 보임, 서버 목록에도 없음) ───
+  currentServerId = 'arena_' + matchId;
+  currentServerPassword = '';
+  currentServerIsOfficial = false;
+  // 기존 서버의 내 흔적 제거
+  try {
+    const oldCh = (arenaSavedState.serverId === 'beginner_official') ? 'game_medieval_beginner'
+      : (arenaSavedState.serverId === 'minigame_official') ? 'game_medieval_minigame'
+      : arenaSavedState.serverIsOfficial ? 'game_medieval_official'
+      : (arenaSavedState.serverPassword ? `game_medieval_private_${arenaSavedState.serverId}_${hashServerPw(arenaSavedState.serverPassword)}` : `game_medieval_private_${arenaSavedState.serverId}`);
+    if (supabase && supabase.removeFromChannel) supabase.removeFromChannel(oldCh, player.name);
+  } catch(e) {}
+  // 다른 플레이어 완전 초기화 → 아레나에는 상대 1명만 나타남
+  if (typeof otherPlayers === 'object') { for (const k in otherPlayers) delete otherPlayers[k]; }
+  // 채널 재접속 (아레나 전용 채널)
+  try { if (supabase && supabase.reconnectChannel) supabase.reconnectChannel(getChannelId()); } catch(e) {}
+
+  // ─── 인벤/장비 초기화 (공정성) ───
+  player.inventory = [
+    { id: 'wooden_sword', count: 1, durability: (typeof DURABILITY_MAX !== 'undefined' && DURABILITY_MAX.wooden_sword) || 80 },
+    { id: 'apple', count: 3 },
+  ];
+  player.equipment = {};
+  player.hotbar = ['wooden_sword', null, null, null, null, null, null, null, null];
+  selectedHotbar = 0;
+  player.hp = 100; player.maxHp = 100;
+
+  // 아레나 중앙 스폰
+  const cxTile = Math.floor(WORLD_W / 2);
+  const cyTile = Math.floor(WORLD_H * 0.4);
+  const isP1 = m.p1 === player.name;
+  player.x = (cxTile + (isP1 ? -4 : 4)) * TILE;
+  player.y = cyTile * TILE;
+  player.vx = 0; player.vy = 0;
+  if (typeof camera !== 'undefined') { camera.x = player.x - canvas.width/2; camera.y = player.y - canvas.height/2; }
+
+  // 룰렛 애니메이션 → 라운드 시작
+  showArenaRevealAnimation(m.itPlayer, m.runPlayer, () => {
+    arenaState.role = m.itPlayer === player.name ? 'it' : 'run';
+    arenaState.phase = 'play';
+    startArenaRound(m);
+  });
+
+  // 매치 상태 리스너 (승패)
+  mref.on('value', s2 => {
+    const mv = s2.val(); if (!mv) { endArenaMatch(null); return; }
+    if (mv.winner && arenaState && !arenaState.winner) {
+      arenaState.winner = mv.winner;
+      endArenaMatch(mv.winner === player.name);
+    }
+  });
+}
+
+function showArenaRevealAnimation(itName, runName, onDone) {
+  const overlay = document.createElement('div');
+  overlay.id = 'arenaRevealOverlay';
+  overlay.style.cssText = `
+    position: fixed; inset: 0; z-index: 99999;
+    background: radial-gradient(ellipse at center, rgba(30,10,50,0.98) 0%, rgba(5,0,10,0.99) 100%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-family: 'Press Start 2P', monospace; color: #fff;
+  `;
+  overlay.innerHTML = `
+    <div style="font-size: 14px; color: #ffd24a; letter-spacing: 4px; margin-bottom: 40px;
+      text-shadow: 3px 3px 0 #000;">⚔ 역할 결정 ⚔</div>
+    <div id="revealSpin" style="
+      font-size: 72px; padding: 30px 60px;
+      background: linear-gradient(180deg, #1a0e2a, #0a0518);
+      border: 3px solid #4a3068; box-shadow: 0 0 40px rgba(200,80,255,0.5), 4px 4px 0 #000;
+      min-width: 300px; text-align: center;
+    ">🎲</div>
+    <div id="revealSub" style="font-size: 10px; color: #aab4d0; margin-top: 24px;">돌리는 중...</div>
+    <style>
+      @keyframes arShake { 0%,100%{transform:translate(0);} 25%{transform:translate(-4px,2px);} 75%{transform:translate(4px,-2px);} }
+    </style>
+  `;
+  document.body.appendChild(overlay);
+
+  const spin = overlay.querySelector('#revealSpin');
+  const sub = overlay.querySelector('#revealSub');
+  const roles = ['👹 술래', '🏃 도망자', '🎲', '⚔️'];
+  let i = 0, spd = 60, total = 0;
+  const tick = () => {
+    if (total > 3000) {
+      const myRole = itName === player.name ? '👹 술래' : '🏃 도망자';
+      const myColor = itName === player.name ? '#ff4466' : '#44aaff';
+      const desc = itName === player.name ? '도망자를 처치하세요!' : '60초간 살아남으세요!';
+      spin.textContent = myRole;
+      spin.style.color = myColor;
+      spin.style.animation = 'arShake 0.3s';
+      spin.style.textShadow = '0 0 20px ' + myColor;
+      sub.innerHTML = `<span style="font-size:12px; color:${myColor};">${desc}</span>`;
+      setTimeout(() => { overlay.remove(); if (onDone) onDone(); }, 2200);
+      return;
+    }
+    spin.textContent = roles[i % roles.length];
+    i++; total += spd;
+    spd = 60 + total * 0.06;
+    setTimeout(tick, spd);
+  };
+  tick();
+}
+
+function startArenaRound(m) {
+  _arenaTimeLeft = m.duration || 60;
+  showNotification(`⚔️ vs ${arenaState.opponent} — ${arenaState.role === 'it' ? '술래' : '도망자'}!`, { duration: 3500 });
+  if (typeof addChatMessage === 'function') addChatMessage('아레나', `⚔️ ${player.name}(${arenaState.role === 'it' ? '술래' : '도망'}) vs ${arenaState.opponent}`, '#FF88AA');
+
+  // ─── 💓 heartbeat: 3초마다 내 존재 알림 ───
+  const hbRef = supabase.db.ref('arena/matches/' + arenaState.matchId + '/hb/' + player.name);
+  hbRef.set(Date.now());
+  arenaState._hbInterval = setInterval(() => {
+    if (!arenaState) return;
+    hbRef.set(Date.now()).catch(()=>{});
+  }, 3000);
+
+  // ─── 👀 상대 heartbeat 감시: 10초 이상 안 오면 항복 처리 ───
+  const oppHbRef = supabase.db.ref('arena/matches/' + arenaState.matchId + '/hb/' + arenaState.opponent);
+  arenaState._hbCheckInterval = setInterval(async () => {
+    if (!arenaState || arenaState.winner) return;
+    const snap = await oppHbRef.get().catch(()=>null);
+    const t = snap ? snap.val() : null;
+    if (!t) return; // 아직 heartbeat 없음 (라운드 시작 직후)
+    if (Date.now() - t > 10000) {
+      // 상대 이탈 → 내 승리 + 상대의 rageQuit 카운트 증가
+      clearInterval(arenaState._hbCheckInterval); arenaState._hbCheckInterval = null;
+      showNotification('🚪 상대가 항복했습니다', { duration: 3000 });
+      if (_arenaMatchRef) {
+        await _arenaMatchRef.child('winner').set(player.name);
+        await _arenaMatchRef.child('forfeitBy').set(arenaState.opponent);
+      }
+      // 상대 이탈 카운트 (Firebase users 노드 - 규칙상 쓰기 가능)
+      try {
+        await supabase.db.ref('users/' + arenaState.opponent + '/rageQuits').transaction(cur => (cur || 0) + 1);
+      } catch(e) {}
+    }
+  }, 2000);
+
+  if (_arenaTimerId) clearInterval(_arenaTimerId);
+  _arenaTimerId = setInterval(() => {
+    _arenaTimeLeft--;
+    updateArenaHUD();
+    if (_arenaTimeLeft <= 0) {
+      clearInterval(_arenaTimerId); _arenaTimerId = null;
+      const runner = arenaState.role === 'run' ? player.name : arenaState.opponent;
+      if (arenaState.role === 'run' && _arenaMatchRef) {
+        _arenaMatchRef.child('winner').set(runner);
+      }
+    }
+  }, 1000);
+  updateArenaHUD();
+}
+
+window.arenaReportKill = async function(targetName) {
+  if (!arenaState || !arenaState.inMatch || !_arenaMatchRef) return;
+  if (arenaState.role !== 'it') return;
+  if (targetName !== arenaState.opponent) return;
+  await _arenaMatchRef.child('winner').set(player.name);
+};
+
 async function endArenaMatch(won) {
-  if (_arenaMatchRef) { _arenaMatchRef.off(); _arenaMatchRef = null; }
+  if (_arenaTimerId) { clearInterval(_arenaTimerId); _arenaTimerId = null; }
+  // heartbeat 정리
+  if (arenaState) {
+    if (arenaState._hbInterval) { clearInterval(arenaState._hbInterval); arenaState._hbInterval = null; }
+    if (arenaState._hbCheckInterval) { clearInterval(arenaState._hbCheckInterval); arenaState._hbCheckInterval = null; }
+  }
+  // 항복승 여부 확인
+  let wonByForfeit = false;
+  try {
+    if (_arenaMatchRef) {
+      const fSnap = await _arenaMatchRef.child('forfeitBy').get();
+      const forfeiter = fSnap.val();
+      if (forfeiter && forfeiter === (arenaState && arenaState.opponent)) {
+        wonByForfeit = true;
+      }
+    }
+  } catch(e) {}
+  if (_arenaMatchRef) { _arenaMatchRef.off(); }
+
+  // ─── 아레나 채널 흔적 제거 ───
+  try {
+    if (arenaState && arenaState.matchId && supabase && supabase.removeFromChannel) {
+      const arenaCh = 'game_medieval_private_arena_' + arenaState.matchId;
+      supabase.removeFromChannel(arenaCh, player.name);
+    }
+  } catch(e) {}
+
+  // ─── 인벤/장비/서버 복구 ───
+  if (arenaSavedState && player) {
+    player.inventory = arenaSavedState.inventory;
+    player.equipment = arenaSavedState.equipment;
+    player.hotbar = arenaSavedState.hotbar;
+    player.hp = arenaSavedState.hp;
+    player.maxHp = arenaSavedState.maxHp;
+    player.x = arenaSavedState.x;
+    player.y = arenaSavedState.y;
+    player.vx = 0; player.vy = 0;
+    // 서버 복구
+    currentServerId = arenaSavedState.serverId || 'official';
+    currentServerPassword = arenaSavedState.serverPassword || '';
+    currentServerIsOfficial = !!arenaSavedState.serverIsOfficial;
+    // 다른 플레이어 리셋
+    if (typeof otherPlayers === 'object') { for (const k in otherPlayers) delete otherPlayers[k]; }
+    // 채널 재접속 (원래 서버로)
+    try { if (supabase && supabase.reconnectChannel) supabase.reconnectChannel(getChannelId()); } catch(e) {}
+    if (typeof camera !== 'undefined') { camera.x = player.x - canvas.width/2; camera.y = player.y - canvas.height/2; }
+    arenaSavedState = null;
+  }
+
+  const matchIdSaved = arenaState ? arenaState.matchId : null;
   if (won === true) {
     arenaRating += 25;
-    player.gold = (player.gold || 0) + 100;
-    showNotification(`🏆 승리! +25점 (레이팅 ${arenaRating}) +100G`, { duration: 3500 });
+    const goldGain = wonByForfeit ? 300 : 200;
+    player.gold = (player.gold || 0) + goldGain;
+    if (typeof addToInventory === 'function') addToInventory(player, 'ruby', wonByForfeit ? 2 : 1);
+    const detail = wonByForfeit ? `상대 항복! +25점 +${goldGain}G +루비×2` : `+25점 +${goldGain}G +루비`;
+    showArenaResult(true, detail);
   } else if (won === false) {
     arenaRating = Math.max(0, arenaRating - 15);
-    showNotification(`💔 패배... -15점 (레이팅 ${arenaRating})`, { duration: 3500 });
+    player.gold = (player.gold || 0) + 30;
+    showArenaResult(false, '-15점 +30G(참여상)');
+  } else {
+    showArenaResult(null, '경기 취소');
   }
   if (supabase && supabase.db && player) {
     supabase.db.ref('arena/ratings/' + player.name).set({ rating: arenaRating, name: player.name });
+    if (matchIdSaved) setTimeout(() => supabase.db.ref('arena/matches/' + matchIdSaved).remove(), 5000);
   }
+  _arenaMatchRef = null;
   arenaState = null;
   document.getElementById('arenaHUD')?.remove();
+  showNotification('🏠 원래 서버로 복귀', { duration: 2000 });
 }
+
+function showArenaResult(won, detail) {
+  const overlay = document.createElement('div');
+  overlay.className = 'pixel-modal-overlay';
+  const c = won === true ? '#44ff88' : (won === false ? '#ff6666' : '#aab4d0');
+  const t = won === true ? '🏆 VICTORY' : (won === false ? '💀 DEFEAT' : '⏸ 취소');
+  overlay.innerHTML = `
+    <div class="pixel-modal" style="width: min(340px, 90vw); text-align: center;">
+      <div class="panel-header">
+        <span class="panel-title">경기 결과</span>
+        <button class="panel-close" onclick="this.closest('.pixel-modal-overlay').remove()">✕</button>
+      </div>
+      <div style="padding: 24px 20px;">
+        <div style="font-size: 22px; color: ${c}; margin-bottom: 14px;
+          text-shadow: 3px 3px 0 #000, 0 0 20px ${c};">${t}</div>
+        <div style="font-size: 10px; color: #ffd24a; margin-bottom: 20px;">${detail}</div>
+        <div style="font-size: 8px; color: #aab4d0;">현재 레이팅: <span style="color:#ffdd66;">${arenaRating}</span></div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  setTimeout(() => overlay.remove(), 5000);
+}
+
 function updateArenaHUD() {
   let hud = document.getElementById('arenaHUD');
-  if (!arenaState) { if (hud) hud.remove(); return; }
+  if (!arenaState || !arenaState.inMatch || arenaState.phase !== 'play') { if (hud) hud.remove(); return; }
   if (!hud) {
     hud = document.createElement('div');
     hud.id = 'arenaHUD';
-    hud.style.cssText = 'position:fixed;top:110px;left:50%;transform:translateX(-50%);z-index:600;background:#1a0a2a;border:2px solid #ff88cc;border-radius:6px;padding:10px 18px;font-family:"Press Start 2P",monospace;color:#ffccee;font-size:8px;min-width:280px;text-align:center;';
+    hud.style.cssText = `
+      position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+      z-index: 600; min-width: min(480px, 90vw); pointer-events: none;
+      font-family: 'Press Start 2P', monospace;
+    `;
     document.body.appendChild(hud);
   }
+  const isIt = arenaState.role === 'it';
+  const c = isIt ? '#ff4466' : '#44aaff';
+  const label = isIt ? '👹 술래' : '🏃 도망자';
+  const goal = isIt ? '도망자 처치!' : (_arenaTimeLeft + '초 생존!');
   hud.innerHTML = `
-    <div style="color:#ff88cc;margin-bottom:6px;">⚔️ ARENA vs ${arenaState.opponent}</div>
-    <div style="display:flex;justify-content:space-between;font-size:7px;">
-      <span>내 HP: ${arenaState.myHp}</span>
-      <span>상대: ${arenaState.oppHp}</span>
-    </div>
-    <button onclick="window.arenaAttack()" style="margin-top:6px;font-family:inherit;font-size:7px;padding:5px 12px;background:#3a0a1a;border:2px solid #ff4488;color:#fff;cursor:pointer;">🗡️ 공격 (-10)</button>`;
+    <div style="
+      background: linear-gradient(180deg, #0c1022 0%, #0a0e1e 100%);
+      border-top: 3px solid ${c}; border-left: 3px solid ${c};
+      border-bottom: 3px solid #0a0c18; border-right: 3px solid #0a0c18;
+      padding: 12px 16px; box-shadow: 4px 4px 0 #000;
+    ">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <div style="color: ${c}; font-size: 11px; text-shadow: 2px 2px 0 #000;">
+            ${label} · vs ${arenaState.opponent}
+          </div>
+          <div style="color: #aab4d0; font-size: 8px; margin-top: 4px;">${goal}</div>
+        </div>
+        <div style="text-align: right;">
+          <div style="color: #ffd24a; font-size: 20px; text-shadow: 2px 2px 0 #000;">
+            ${String(Math.floor(_arenaTimeLeft/60)).padStart(2,'0')}:${String(_arenaTimeLeft%60).padStart(2,'0')}
+          </div>
+        </div>
+      </div>
+    </div>`;
 }
+
 window.joinArenaQueue = joinArenaQueue;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ⚠️ 아레나 비매너 페널티 (rageQuits 3회 이상 누적 시 골드 차감)
+// ═══════════════════════════════════════════════════════════════════════════
+window.showArenaPenaltyModal = async function(rageCount, userId) {
+  // 페널티 계산: 3회부터 100G씩 (3회=100G, 4회=200G, 최대 1000G)
+  const penalty = Math.min(1000, (rageCount - 2) * 100);
+  const overlay = document.createElement('div');
+  overlay.className = 'pixel-modal-overlay';
+  overlay.style.zIndex = '99999';
+  overlay.innerHTML = `
+    <div class="pixel-modal" style="width: min(420px, 92vw);">
+      <div class="panel-header">
+        <span class="panel-title" style="color:#ff6688;">⚠️ 비매너 경고</span>
+      </div>
+      <div style="padding: 24px 22px; text-align: center;">
+        <div style="font-size: 42px; margin-bottom: 16px;">🚫</div>
+        <div style="font-size: 10px; color: #ffcccc; line-height: 1.9; margin-bottom: 18px;">
+          아레나 경기 중 <span style="color:#ff6688;">${rageCount}회</span> 이탈이 감지되었습니다.<br>
+          <span style="color:#8890bb; font-size:8px;">경기 도중 나가면 상대에게 큰 피해를 줍니다.</span>
+        </div>
+        <div style="
+          background: linear-gradient(180deg, #2a0a0a, #150505);
+          border-top: 2px solid #661111; border-left: 2px solid #661111;
+          border-bottom: 2px solid #100000; border-right: 2px solid #100000;
+          padding: 12px; margin-bottom: 18px;
+        ">
+          <div style="font-size: 8px; color: #aa6677; margin-bottom: 4px;">페널티</div>
+          <div style="font-size: 14px; color: #ff8888; text-shadow: 2px 2px 0 #000;">
+            -${penalty}<span style="color:#ffd24a;">G</span>
+          </div>
+        </div>
+        <div style="font-size: 7px; color: #8890bb; line-height: 1.8; margin-bottom: 16px;">
+          컴퓨터 문제로 꺼진 것이라면 죄송합니다.<br>
+          이탈 카운트는 승리 3회마다 1회씩 감소합니다.
+        </div>
+        <button onclick="window.acceptArenaPenalty('${userId}', ${penalty}, ${rageCount})"
+          style="font-family:'Press Start 2P',monospace; font-size:9px; padding:10px 24px;
+          background: linear-gradient(180deg, #2a1020, #180818);
+          border-top:2px solid #883355; border-left:2px solid #883355;
+          border-bottom:2px solid #220011; border-right:2px solid #220011;
+          color:#ffcccc; cursor:pointer; box-shadow: 2px 2px 0 #000;">확인</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+};
+
+window.acceptArenaPenalty = async function(userId, penalty, rageCount) {
+  if (player && (player.gold || 0) >= penalty) player.gold -= penalty;
+  else if (player) player.gold = 0;
+  // rageQuits 리셋 (누적 카운트만 초기화 — 완전 삭제하면 진짜 이탈러가 매번 리셋)
+  try {
+    if (supabase && supabase.db) {
+      // 카운트를 0으로 리셋하는 게 아니라 -2 낮춤 (완전 리셋은 너무 관대)
+      await supabase.db.ref('users/' + userId + '/rageQuits').set(Math.max(0, rageCount - 3));
+    }
+  } catch(e) {}
+  document.querySelectorAll('.pixel-modal-overlay').forEach(el => {
+    if (el.textContent && el.textContent.includes('비매너 경고')) el.remove();
+  });
+  if (typeof showNotification === 'function') showNotification(`-${penalty}G 페널티 적용됨`, { duration: 3000 });
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 💹 동적 상점 NPC — 아이템별 가격 수요/공급에 따라 변동
@@ -15271,7 +15990,6 @@ window.marketBuy = async function(itemId, count) {
 window.openMarketNPC = function() {
   const modal = document.createElement('div');
   modal.className = 'pixel-modal-overlay';
-  modal.style.zIndex = '99998';
   modal.onmousedown = (e) => { if (e.target === modal) modal.remove(); };
   const rows = MARKET_ITEMS.map(it => {
     const price = getMarketPrice(it.id) || it.base;
@@ -15279,30 +15997,66 @@ window.openMarketNPC = function() {
     const owned = ((player && player.inventory) || []).find(s => s && s.id === it.id);
     const cnt = owned ? owned.count : 0;
     const trend = (marketPrices[it.id] && marketPrices[it.id].mul) || 1;
-    const trendIcon = trend > 1.05 ? '📈' : (trend < 0.95 ? '📉' : '➖');
+    // 픽셀 아이콘 (텍스트 대신 인게임 아이템 이모지지만 나머지 UI는 통일)
+    const trendClass = trend > 1.05 ? 'up' : (trend < 0.95 ? 'down' : 'flat');
+    const trendCol = trend > 1.05 ? '#ff6666' : (trend < 0.95 ? '#66ff88' : '#aab4d0');
+    const trendSym = trend > 1.05 ? '▲' : (trend < 0.95 ? '▼' : '─');
     return `
-      <div style="display:flex;align-items:center;gap:8px;padding:8px 6px;border-bottom:1px solid #1c2244;">
-        <div style="font-size:18px;width:24px;">${it2.icon || '📦'}</div>
-        <div style="flex:1;min-width:0;">
-          <div style="font-size:8px;color:#fff;">${it2.name}</div>
-          <div style="font-size:7px;color:#8890bb;">보유: ${cnt} · ${trendIcon} ${price}G</div>
+      <div class="market-row" style="
+        display:flex; align-items:center; gap:10px;
+        padding:10px 12px; margin-bottom:4px;
+        background: linear-gradient(180deg, #10142a, #0a0e1e);
+        border-top: 2px solid #232a4a; border-left: 2px solid #232a4a;
+        border-bottom: 2px solid #060810; border-right: 2px solid #060810;
+      ">
+        <div style="
+          width:44px; height:44px; display:flex; align-items:center; justify-content:center;
+          background: linear-gradient(180deg, #0a0e1e, #060810);
+          border-top: 2px solid #232a4a; border-left: 2px solid #232a4a;
+          border-bottom: 2px solid #060810; border-right: 2px solid #060810;
+          box-shadow: inset 0 0 8px rgba(0,0,0,0.6);
+          padding: 4px; flex-shrink:0;
+        ">
+          <div class="item-svg-wrap" style="width:100%; height:100%;">
+            ${typeof getItemSVG === 'function' ? getItemSVG(it.id) : (it2.icon || '📦')}
+          </div>
+        </div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:9px; color:#e0d0a0; margin-bottom:3px;">${it2.name}</div>
+          <div style="font-size:7px; color:#8890bb;">
+            보유 <span style="color:#c8d0ff;">${cnt}</span>
+            <span style="margin-left:8px; color:${trendCol};">${trendSym} ${price}<span style="color:#ffd24a;">G</span></span>
+          </div>
         </div>
         <button onclick="marketBuy('${it.id}',1);this.closest('.pixel-modal-overlay').remove();openMarketNPC();"
-          style="font-family:'Press Start 2P',monospace;font-size:7px;padding:5px 8px;background:#0a2010;border:1px solid #226622;color:#88ffaa;cursor:pointer;">사기</button>
+          style="font-family:'Press Start 2P',monospace; font-size:7px; padding:6px 10px;
+          background: linear-gradient(180deg, #0a2010, #061006);
+          border-top:2px solid #3a6a3a; border-left:2px solid #3a6a3a;
+          border-bottom:2px solid #041004; border-right:2px solid #041004;
+          color:#88ff88; cursor:pointer; box-shadow: 2px 2px 0 #000;">구매</button>
         <button onclick="marketSell('${it.id}',1);this.closest('.pixel-modal-overlay').remove();openMarketNPC();"
-          style="font-family:'Press Start 2P',monospace;font-size:7px;padding:5px 8px;background:#201010;border:1px solid #662222;color:#ff8888;cursor:pointer;">팔기</button>
+          style="font-family:'Press Start 2P',monospace; font-size:7px; padding:6px 10px;
+          background: linear-gradient(180deg, #200a10, #100405);
+          border-top:2px solid #6a3a3a; border-left:2px solid #6a3a3a;
+          border-bottom:2px solid #100404; border-right:2px solid #100404;
+          color:#ff8888; cursor:pointer; box-shadow: 2px 2px 0 #000;">판매</button>
       </div>`;
   }).join('');
   modal.innerHTML = `
-    <div class="pixel-modal" style="width:min(460px,92vw);max-height:80vh;">
+    <div class="pixel-modal" style="width: min(480px, 92vw);">
       <div class="panel-header">
-        <span class="panel-title" style="color:#ffd700;">💹 방랑 상인 (동적 시세)</span>
+        <span class="panel-title">💹 방랑 상인</span>
         <button class="panel-close" onclick="this.closest('.pixel-modal-overlay').remove()">✕</button>
       </div>
-      <div class="panel-body" style="padding:0 12px 12px;max-height:calc(80vh - 80px);overflow-y:auto;">
-        <div style="padding:8px 4px;font-size:7px;color:#8890bb;text-align:center;line-height:1.7;">
-          📈 = 오르는 중 · 📉 = 떨어지는 중 · ➖ = 안정<br>
-          💰 내 골드: ${player ? player.gold : 0}G
+      <div class="panel-body" style="padding: 10px;">
+        <div style="
+          padding: 8px 10px; margin-bottom: 10px;
+          background: linear-gradient(180deg, rgba(255,215,0,0.04), rgba(0,0,0,0));
+          border-left: 2px solid #665533;
+          font-size: 8px; color:#aab4d0; line-height:1.9;
+        ">
+          ▲ 상승 · ▼ 하락 · ─ 안정 · 시세는 매매량에 따라 변동<br>
+          <span style="color:#ffd24a;">보유 골드: ${player ? (player.gold || 0).toLocaleString() : 0}G</span>
         </div>
         ${rows}
       </div>
@@ -15342,6 +16096,321 @@ window.showArenaRanking = async function() {
     </div>`;
   document.body.appendChild(modal);
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🧙 방랑 상인 NPC — 맵을 돌아다니는 상인, 근접 시 상점 오픈, 죽이면 이스터에그
+// ═══════════════════════════════════════════════════════════════════════════
+let traderNPCs = [];               // { x, y, vx, hp, maxHp, dir, mode, modeTimer, id }
+let _lastTraderInteractTs = 0;
+let _traderSpawnedForServer = null; // 서버별 1회 스폰
+const TRADER_MAX = 3;
+
+function spawnTraders() {
+  if (spaceMode || dungeonMode || oceanMode) return;
+  if (_traderSpawnedForServer === currentServerId) return;
+  _traderSpawnedForServer = currentServerId;
+  traderNPCs = [];
+  // 마을(월드 중앙) 근처에 3명 스폰
+  for (let i = 0; i < TRADER_MAX; i++) {
+    const tx = Math.floor(WORLD_W / 2) + (Math.random() * 60 - 30) * (i % 2 === 0 ? 1 : -1);
+    // 지면 근처(대략 y=WORLD_H*0.5)에 배치
+    const ty = Math.floor(WORLD_H * 0.55);
+    traderNPCs.push({
+      id: 'trader_' + i + '_' + Date.now(),
+      x: tx * TILE, y: ty * TILE,
+      vx: 0, vy: 0,
+      hp: 30, maxHp: 30,
+      dir: Math.random() > 0.5 ? 1 : -1,
+      mode: 'wander', modeTimer: 60 + Math.random() * 180,
+      hit: false, hitTimer: 0,
+      dead: false,
+    });
+  }
+}
+
+function updateTraders() {
+  if (spaceMode || dungeonMode || oceanMode) return;
+  if (traderNPCs.length === 0 && !_traderSpawnedForServer) spawnTraders();
+  const g = 0.6;
+  for (const t of traderNPCs) {
+    if (t.dead) continue;
+    // 화면 근처만 물리 업데이트 (성능)
+    if (canvas && Math.abs(t.x - (camera.x + canvas.width/2)) > canvas.width + 400) continue;
+    t.modeTimer--;
+    if (t.modeTimer <= 0) {
+      // 모드 전환: 걷기 or 잠깐 정지
+      if (Math.random() < 0.3) { t.mode = 'idle'; t.modeTimer = 60 + Math.random() * 120; t.vx = 0; }
+      else { t.mode = 'wander'; t.dir = Math.random() > 0.5 ? 1 : -1; t.modeTimer = 120 + Math.random() * 240; }
+    }
+    if (t.mode === 'wander') t.vx = t.dir * 0.7;
+    else t.vx = 0;
+    // 중력
+    t.vy = Math.min(10, t.vy + g);
+    // 다음 위치
+    let nx = t.x + t.vx;
+    let ny = t.y + t.vy;
+    // 아래 타일 체크 (단순 지면)
+    const bx = Math.floor((t.x + 12) / TILE);
+    const by = Math.floor((ny + 32) / TILE);
+    if (by >= 0 && by < WORLD_H && bx >= 0 && bx < WORLD_W) {
+      const below = world[by] && world[by][bx];
+      if (below && below.type && below.type !== 'water') {
+        ny = by * TILE - 32; t.vy = 0;
+      }
+    }
+    // 벽 체크 → 방향 반전
+    const fx = Math.floor((nx + (t.dir > 0 ? 24 : 0)) / TILE);
+    const fy = Math.floor((t.y + 16) / TILE);
+    if (fy >= 0 && fy < WORLD_H && fx >= 0 && fx < WORLD_W) {
+      const front = world[fy] && world[fy][fx];
+      if (front && front.type && front.type !== 'water') { t.dir *= -1; t.vx = 0; }
+    }
+    t.x = nx; t.y = ny;
+    if (t.hitTimer > 0) t.hitTimer--;
+    else t.hit = false;
+    // 월드 경계
+    if (t.x < 0) { t.x = 0; t.dir = 1; }
+    if (t.x > WORLD_W * TILE - 24) { t.x = WORLD_W * TILE - 24; t.dir = -1; }
+  }
+  // 근접 감지 → 자동 상점 오픈 (2.5칸 이내, 3초 쿨다운)
+  if (player) {
+    const now = Date.now();
+    if (now - _lastTraderInteractTs > 4000 && !document.querySelector('.pixel-modal-overlay')) {
+      for (const t of traderNPCs) {
+        if (t.dead) continue;
+        const dx = (t.x + 12) - (player.x + player.w/2);
+        const dy = (t.y + 16) - (player.y + player.h/2);
+        if (Math.hypot(dx, dy) < TILE * 2.5) {
+          _lastTraderInteractTs = now;
+          if (typeof openMarketNPC === 'function') openMarketNPC();
+          break;
+        }
+      }
+    }
+  }
+}
+
+// 상인 픽셀 아트 스프라이트
+function drawTraders() {
+  if (spaceMode || dungeonMode || oceanMode || !ctx) return;
+  for (const t of traderNPCs) {
+    if (t.dead) continue;
+    const sx = t.x - camera.x;
+    const sy = t.y - camera.y;
+    if (sx < -50 || sx > canvas.width + 50) continue;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    // 그림자
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath(); ctx.ellipse(sx + 12, sy + 33, 12, 3, 0, 0, Math.PI*2); ctx.fill();
+    // 몸(로브) — 픽셀
+    const flash = t.hit ? '#ffcc88' : null;
+    const px = 3;
+    function pix(dx, dy, w, h, col) { ctx.fillStyle = flash || col; ctx.fillRect(sx + dx*px, sy + dy*px, w*px, h*px); }
+    // 로브 (몸통)
+    pix(2, 5, 4, 5, '#4a2a68');
+    pix(1, 6, 1, 4, '#4a2a68');
+    pix(6, 6, 1, 4, '#4a2a68');
+    pix(2, 10, 4, 1, '#3a1a50');
+    // 로브 벨트
+    pix(2, 8, 4, 1, '#ffd24a');
+    pix(3, 8, 2, 1, '#ffdd88');
+    // 두건/모자
+    pix(2, 1, 4, 3, '#3a1a50');
+    pix(1, 3, 6, 1, '#3a1a50');
+    // 얼굴 (그림자 안)
+    pix(3, 4, 2, 1, '#c9a877');
+    // 눈
+    ctx.fillStyle = '#000';
+    ctx.fillRect(sx + 3*px, sy + 4*px + 1, 1, 1);
+    ctx.fillRect(sx + 4*px + 1, sy + 4*px + 1, 1, 1);
+    // 손(지팡이 잡음)
+    pix(t.dir > 0 ? 6 : 1, 7, 1, 1, '#c9a877');
+    // 지팡이
+    ctx.strokeStyle = '#6a3a1a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    const stx = sx + (t.dir > 0 ? 7 : 1) * px;
+    ctx.moveTo(stx, sy + 5); ctx.lineTo(stx, sy + 30);
+    ctx.stroke();
+    // 지팡이 크리스탈
+    ctx.fillStyle = '#88ffcc';
+    ctx.fillRect(stx - 2, sy + 3, 4, 4);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(stx - 1, sy + 4, 1, 1);
+    // HP 바 (맞았을 때만)
+    if (t.hp < t.maxHp) {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(sx, sy - 8, 24, 4);
+      ctx.fillStyle = '#ff4466';
+      ctx.fillRect(sx + 1, sy - 7, Math.floor(22 * (t.hp / t.maxHp)), 2);
+    }
+    // 이름
+    ctx.font = 'bold 8px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#000'; ctx.fillText('방랑 상인', sx + 12 + 1, sy - 14 + 1);
+    ctx.fillStyle = '#ffd24a'; ctx.fillText('방랑 상인', sx + 12, sy - 14);
+    ctx.restore();
+  }
+}
+
+// 상인 피격 (attack 훅에서 호출)
+function damageTraderAt(worldX, worldY, dmg) {
+  for (const t of traderNPCs) {
+    if (t.dead) continue;
+    const dx = worldX - (t.x + 12);
+    const dy = worldY - (t.y + 16);
+    if (Math.hypot(dx, dy) < TILE * 1.8) {
+      t.hp -= dmg;
+      t.hit = true; t.hitTimer = 10;
+      if (typeof spawnDamageNumber === 'function') spawnDamageNumber(t.x + 12, t.y - 10, dmg, '#ff8844');
+      if (t.hp <= 0) {
+        t.dead = true;
+        killedTrader(t);
+      }
+      return true;
+    }
+  }
+  return false;
+}
+window.damageTraderAt = damageTraderAt;
+
+// 😈 이스터에그: 상인을 죽였을 때 형이 강림
+function killedTrader(t) {
+  if (typeof addChatMessage === 'function') addChatMessage('시스템', '💀 방랑 상인이 쓰러졌다...', '#ff6666');
+  // 잠깐 대기 후 이스터에그 발동
+  setTimeout(() => triggerBrotherEasterEgg(t.x, t.y), 800);
+  // 5초 후 다시 스폰 (마을 어딘가에)
+  setTimeout(() => {
+    const nx = Math.floor(WORLD_W / 2) + (Math.random() * 60 - 30);
+    const ny = Math.floor(WORLD_H * 0.55);
+    traderNPCs.push({
+      id: 'trader_' + Date.now(),
+      x: nx * TILE, y: ny * TILE,
+      vx: 0, vy: 0, hp: 30, maxHp: 30,
+      dir: Math.random() > 0.5 ? 1 : -1,
+      mode: 'wander', modeTimer: 120, hit: false, hitTimer: 0, dead: false,
+    });
+  }, 60000);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 💥 이스터에그: 형이 강림 — "넌 내 동생을 죽였어" + 핵미사일
+// ═══════════════════════════════════════════════════════════════════════════
+function triggerBrotherEasterEgg(tx, ty) {
+  if (window._brotherEasterEggActive) return;
+  window._brotherEasterEggActive = true;
+
+  // 1) 어두워지는 오버레이 + "형" 낙하
+  const overlay = document.createElement('div');
+  overlay.id = 'brotherEggOverlay';
+  overlay.style.cssText = `
+    position: fixed; inset: 0; z-index: 99999; pointer-events: none;
+    background: radial-gradient(circle at center, rgba(60,0,0,0.4) 0%, rgba(0,0,0,0.85) 100%);
+    overflow: hidden; font-family: 'Press Start 2P', monospace;
+    opacity: 0; transition: opacity 0.5s;
+  `;
+  overlay.innerHTML = `
+    <!-- 낙하하는 형 (거대 픽셀) -->
+    <div id="fallingBro" style="
+      position: absolute; left: 50%; top: -260px;
+      transform: translateX(-50%);
+      font-size: 160px; line-height: 1;
+      filter: drop-shadow(0 0 30px #ff2233);
+      transition: top 1.2s cubic-bezier(0.6, 0.05, 0.9, 0.5);
+    ">🕶️</div>
+
+    <!-- 대사 박스 -->
+    <div id="broQuote" style="
+      position: absolute; left: 50%; top: 45%;
+      transform: translate(-50%, -50%);
+      opacity: 0; transition: opacity 0.4s;
+      background: linear-gradient(180deg, #0c1022, #0a0e1e);
+      border-top: 3px solid #ff4466; border-left: 3px solid #ff4466;
+      border-bottom: 3px solid #0a0c18; border-right: 3px solid #0a0c18;
+      box-shadow: 4px 4px 0 #000, 0 0 40px rgba(255,68,102,0.5);
+      padding: 24px 32px; min-width: 320px; text-align: center;
+    ">
+      <div style="color: #ff4466; font-size: 12px; letter-spacing: 3px; margin-bottom: 12px;
+        text-shadow: 2px 2px 0 #000;">👊 형 강림 👊</div>
+      <div style="color: #fff; font-size: 14px; line-height: 1.8;
+        text-shadow: 2px 2px 0 #000;">
+          "넌 내 동생을<br>죽였어..."
+      </div>
+    </div>
+
+    <!-- 핵 발사 준비 라벨 -->
+    <div id="broNukeLabel" style="
+      position: absolute; left: 50%; top: 65%;
+      transform: translateX(-50%);
+      opacity: 0; transition: opacity 0.3s;
+      color: #ff2233; font-size: 20px; letter-spacing: 4px;
+      text-shadow: 3px 3px 0 #000, 0 0 20px #ff2233;
+      animation: broNukePulse 0.4s infinite alternate;
+    ">☢ 핵 발사 ☢</div>
+    <style>
+      @keyframes broNukePulse {
+        from { transform: translateX(-50%) scale(1); }
+        to   { transform: translateX(-50%) scale(1.15); }
+      }
+      @keyframes nukeFlash {
+        0%   { background: rgba(255,255,255,0); }
+        20%  { background: rgba(255,255,255,1); }
+        50%  { background: rgba(255,240,180,1); }
+        100% { background: rgba(0,0,0,0); }
+      }
+    </style>
+  `;
+  document.body.appendChild(overlay);
+
+  // fade in
+  requestAnimationFrame(() => { overlay.style.opacity = '1'; });
+  // 형 낙하
+  setTimeout(() => {
+    const bro = overlay.querySelector('#fallingBro');
+    if (bro) bro.style.top = '18%';
+  }, 300);
+  // 낙하 임팩트 (카메라 흔들림)
+  setTimeout(() => {
+    if (typeof _camShake !== 'undefined') _camShake = 30;
+    // 대사 표시
+    overlay.querySelector('#broQuote').style.opacity = '1';
+  }, 1600);
+  // 핵 라벨
+  setTimeout(() => {
+    overlay.querySelector('#broNukeLabel').style.opacity = '1';
+  }, 3200);
+  // 💥 핵 발사 (하얀 플래시)
+  setTimeout(() => {
+    const flash = document.createElement('div');
+    flash.style.cssText = `
+      position: fixed; inset: 0; z-index: 100000; pointer-events: none;
+      animation: nukeFlash 1.8s forwards;
+    `;
+    document.body.appendChild(flash);
+    // 폭발 사운드 대체 (진동)
+    if (typeof _camShake !== 'undefined') _camShake = 60;
+    // HP 1 남기고 3초 무적
+    if (player) {
+      player.hp = 1;
+      window._brotherInvuln = true;
+      if (typeof showNotification === 'function') {
+        showNotification('☢ 핵 피격! HP 1 · 3초 무적', { duration: 3000 });
+      }
+      setTimeout(() => { window._brotherInvuln = false; }, 3000);
+    }
+    setTimeout(() => flash.remove(), 1800);
+  }, 4200);
+  // 오버레이 제거
+  setTimeout(() => {
+    overlay.style.opacity = '0';
+    setTimeout(() => {
+      overlay.remove();
+      window._brotherEasterEggActive = false;
+    }, 800);
+  }, 6500);
+}
+window.triggerBrotherEasterEgg = triggerBrotherEasterEgg;
 
 // 게임 로드 시 자동 초기화
 setTimeout(() => {
@@ -15418,6 +16487,8 @@ function hasAramidArmor() {
 // ⚔️ 공격 피해 적용 (아라미드 갑옷 착용 시 HP 최소 10 보존)
 function damagePlayerByAttack(dmg) {
   if (!player) return;
+  // 😈 형 이스터에그 무적 (3초간)
+  if (window._brotherInvuln) return;
   if (dmg > 0) SFX.hurt();
   // 🛡️ 방어구 내구도 감소 (피격 시)
   if (dmg > 0 && player.equipment) {
@@ -20375,6 +21446,7 @@ function gameLoop(timestamp) {
   if (_bgMtnPhase !== dayPhase) _bgMtnCache = null;
 
   updatePlayer(); updateAnimals(); updateParticles(); updateProjectiles();
+  if (typeof updateTraders === 'function') updateTraders();
   // 저사양 모드: 물/낮밤 갱신을 격프레임으로 (시각 차이 거의 없음, CPU 절약)
   if (!_perfLow || frameCount % 2 === 0) { updateDayNight(); updateWater(); }
   updateWeather();
@@ -20494,6 +21566,10 @@ function gameLoop(timestamp) {
   updateGhostMode();
   drawPlayer(player);
   drawPlayerPet();
+  // 🧙 방랑 상인 NPC
+  if (typeof drawTraders === 'function') drawTraders();
+  // 🐲 월드보스 (플레이어 위에 오도록 뒤에 그림)
+  if (typeof drawWorldBoss === 'function') drawWorldBoss();
   // 다른 플레이어 펫도 그리기
   Object.values(otherPlayers).forEach(op => {
     if (!!op.inDungeon !== dungeonMode) return;
@@ -22028,6 +23104,15 @@ async function doRegister() {
 window.startGame = function (userData) {
   // 기존 게임루프 취소 (중복 실행 방지)
   if (_gameLoopRafId) { cancelAnimationFrame(_gameLoopRafId); _gameLoopRafId = null; }
+  // ─── ⚠️ 아레나 비매너 페널티 체크 (rageQuits ≥ 3 이면 골드 차감 + 경고) ───
+  setTimeout(() => {
+    if (isOffline || !supabase || !supabase.db || !userData || !userData.user_id) return;
+    supabase.db.ref('users/' + userData.user_id + '/rageQuits').get().then(snap => {
+      const cnt = snap.val() || 0;
+      if (cnt >= 3) showArenaPenaltyModal(cnt, userData.user_id);
+      else if (cnt > 0) console.log('[아레나] 이탈 기록:', cnt, '회 (3회부터 페널티)');
+    }).catch(()=>{});
+  }, 2000);
   // 서버 전환 시 이전 채널에서 완전 이탈 처리
   if (!isOffline && supabase && player) {
     const prevChannel = supabase._channelId;
@@ -22045,6 +23130,8 @@ window.startGame = function (userData) {
   placedChests = [];
   _openChest = null;
   droppedItems = [];
+  // 방랑 상인 리셋 (서버 이동 시 다시 스폰됨)
+  if (typeof traderNPCs !== 'undefined') { traderNPCs = []; _traderSpawnedForServer = null; }
   tradeState = null;
   mgCleanup(); // 미니게임 관련 전부 정리
   if (mgLobbyInterval) { clearInterval(mgLobbyInterval); mgLobbyInterval = null; }
