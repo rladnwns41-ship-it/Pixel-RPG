@@ -9540,7 +9540,7 @@ function updatePlayer() {
     }
   } else {
     player.drowning = 0;
-    dismissNotificationById('swim');
+    if (!oceanMode) dismissNotificationById('swim');
   }
 
   // ---- 던전 근접 알림 (오버월드에서만) ----
@@ -16428,8 +16428,13 @@ window.openBotAdminPanel = async function() {
 };
 
 window.startBotTraining = async function() {
-  const token = prompt('BOT_SERVER_TOKEN 입력 (Render 환경변수):');
-  if (!token) return;
+  let token;
+  try {
+    const tr = await fetch('/bot-token', { headers: { 'x-token': NET?.token || '' } });
+    const tj = await tr.json();
+    if (!tj.ok || !tj.token) { showNotification('❌ 토큰 획득 실패: ' + (tj.error || '권한 없음')); return; }
+    token = tj.token;
+  } catch(e) { showNotification('❌ 토큰 요청 실패: ' + e.message); return; }
   try {
     const r = await fetch(BOT_SERVER_URL + '/train', {
       method: 'POST',
