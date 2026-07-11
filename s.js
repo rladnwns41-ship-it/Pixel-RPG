@@ -39,6 +39,51 @@ function rateOk(uid, a, max, win) { const now = Date.now(); if (!RATE.has(uid)) 
 function parseInv(str) { try { const a = JSON.parse(str || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
 
 // ============================================================
+// 🚫 서버측 검열 (클라 우회 방지) — 금지어·개인정보·광고 차단
+// ============================================================
+const BAD_WORDS = [
+  '시발','씨발','ㅅㅂ','ㅆㅂ','병신','ㅄ','ㅂㅅ','존나','좆','ㅈㄴ','새끼','ㅅㄲ','개새','썅','미친','ㅁㅊ',
+  '지랄','ㅈㄹ','꺼져','닥쳐','엿먹','fuck','shit','bitch','asshole','dick','pussy',
+  '섹스','sex','야동','자위','창녀','걸레','매춘','포르노','porn','ㅅㅅ',
+  '한남','한녀','급식충','틀딱','맘충','노슬아치','좌빨','우꼴','전라디언','일베','메갈',
+  '왕따','따돌림','빵셔틀','괴롭혀','때려','폭행','자살해','뒤져','뒤져라','뒤져버','죽어','죽여',
+  '디스코드 오세요','디코 오세요','텔레그램','텔레','카톡','카카오톡 아이디','인스타 팔로우','팔로우해',
+  '토토','스포츠토토','바카라','슬롯','환전','충전 이벤트','불법','도박','먹튀'
+];
+const BAD_REGEX = [
+  /01[016789][-\s]?\d{3,4}[-\s]?\d{4}/,
+  /\d{6}[-\s]?\d{7}/,
+  /https?:\/\/[^\s]+/i,
+  /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/,
+  /디코[\s.]*[a-zA-Z0-9._-]{2,}/i,
+  /카톡[\s.:]*[a-zA-Z0-9._-]{2,}/i
+];
+function serverCensor(raw, max) {
+  if (typeof raw !== 'string') return { blocked: true, reason: 'bad_input' };
+  let t = raw.normalize('NFKC');
+  const compact = t.replace(/\s+/g, '').toLowerCase();
+  for (const w of BAD_WORDS) if (compact.includes(w.toLowerCase())) return { blocked: true, reason: 'bad_word' };
+  for (const r of BAD_REGEX) if (r.test(t)) return { blocked: true, reason: 'personal_info' };
+  if (/(.)\1{7,}/.test(t)) return { blocked: true, reason: 'spam' };
+  if (t.length > (max || 200)) t = t.slice(0, max || 200);
+  return { ok: true, text: t };
+}
+function censorNick(raw) {
+  const c = serverCensor(raw, 12);
+  if (c.blocked) return c;
+  if (/관리자|운영자|admin|GM|모드|mod|공식|official|system|시스템/i.test(c.text)) return { blocked: true, reason: 'impersonation' };
+  return c;
+}
+// ⛔ 도배·욕설 반복시 경고 → 3회 초과 시 정지
+async function warnUser(uid, reason) {
+  const ref = rtdb.ref('users/' + uid);
+  let count = 0;
+  await ref.child('warnings').transaction(cur => { count = (cur || 0) + 1; return count; });
+  if (count >= 3) await banUser(uid, '반복 위반 3회: ' + reason);
+  return count;
+}
+
+// ============================================================
 // 🤖 AI 안티치트 (Groq) — 수상한 유저를 AI가 판정 → 정지
 // ============================================================
 const BAN_EMAIL = 'rladnwns54@gmail.com';
@@ -82,10 +127,13 @@ async function banUser(uid, reason) {
 async function handleRegister(m) {
   if (!validId(m.user_id)) return { error: '아이디: 영문/숫자 4~16자' };
   if (typeof m.password !== 'string' || m.password.length < 4 || m.password.length > 64) return { error: '비밀번호 4~64자' };
+  // 🚫 닉네임 검열 (사칭/욕설/개인정보 차단)
+  const nc = censorNick(safeStr(m.nickname, 24) || m.user_id);
+  if (nc.blocked) return { error: '닉네임 거부: ' + nc.reason };
   if (await getUser(m.user_id)) return { error: '이미 존재하는 아이디입니다' };
   const pw_hash = await bcrypt.hash(m.password, 10);
   await rtdb.ref('users/' + m.user_id).set({
-    user_id: m.user_id, nickname: safeStr(m.nickname, 24) || m.user_id, pw_hash,
+    user_id: m.user_id, nickname: nc.text, pw_hash,
     level: 1, xp: 0, max_xp: 100, gold: 50, hp: 100, max_hp: 100, mp: 50, max_mp: 50,
     atk: 5, def_stat: 2, skill_points: 3,
     play_seconds: 0, sessions: 0, banned: false,
@@ -517,9 +565,59 @@ wss.on('connection', (ws) => {
         case 'corpse_set': { const u = auth(); if (!u) return; await actCorpse(u, m.wid, m.corpse); return; }
         case 'corpse_del': { const u = auth(); if (!u) return; await actCorpseDelete(u, m.wid, m.id); return; }
         case 'join': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); sess.user_id = u; joinRoom(ws, safeStr(m.room, 40) || 'official'); return reply({ ok: true }); }
-        case 'broadcast': { if (!sess.user_id) return; relay(ws, safeStr(m.event, 40), m.payload); return; }
+        case 'broadcast': {
+          if (!sess.user_id) return;
+          const uid = sess.user_id;
+          // 🚫 채팅 이벤트만 검열 (다른 broadcast는 시스템 이벤트라 통과)
+          if (m.event === 'chat' && m.payload && typeof m.payload.text === 'string') {
+            if (!rateOk(uid, 'chat', 6, 5000)) return;                 // 5초 6회 상한
+            const c = serverCensor(m.payload.text, 200);
+            if (c.blocked) {
+              await warnUser(uid, c.reason).catch(() => {});
+              return reply({ error: 'censored', reason: c.reason });
+            }
+            m.payload.text = c.text;
+          }
+          relay(ws, safeStr(m.event, 40), m.payload);
+          return;
+        }
+        case 'report': {
+          const u = auth(); if (!u) return reply({ error: 'unauthorized' });
+          if (!rateOk(u, 'report', 5, 60000)) return reply({ error: 'rate' });   // 1분 5건
+          const target = safeStr(m.target, 24);
+          const reason = safeStr(m.reason, 500);
+          if (!target || reason.length < 3) return reply({ error: 'bad_input' });
+          const key = 'r' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+          await rtdb.ref('reports/' + key).set({
+            target, reason, reporter: u, reporter_nick: safeStr(m.reporter_nick, 24),
+            at: Date.now(), at_iso: new Date().toISOString(),
+            ua: safeStr(m.ua, 200), handled: false
+          });
+          console.log(`📨 신고 접수: ${u} → ${target} (${reason.slice(0, 40)})`);
+          return reply({ ok: true });
+        }
         case 'admin_give': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actAdminGive(u, m.target, m.kind, m.value, m.count)); }
         case 'admin_search': { const u = auth(); if (!u || !ADMIN_IDS.has(u)) return reply({ error: 'unauthorized' }); return reply({ ok: true, items: adminSearchItems(m.q) }); }
+        case 'admin_reports': {
+          const u = auth();
+          if (!u || !ADMIN_IDS.has(u)) return reply({ error: 'unauthorized' });
+          const snap = await rtdb.ref('reports').orderByChild('at').limitToLast(100).get();
+          const val = snap.exists() ? snap.val() : {};
+          const list = [];
+          for (const k in val) { list.push({ id: k, ...val[k] }); }
+          list.sort((a, b) => (b.at || 0) - (a.at || 0));
+          return reply({ ok: true, reports: list });
+        }
+        case 'admin_report_handle': {
+          const u = auth();
+          if (!u || !ADMIN_IDS.has(u)) return reply({ error: 'unauthorized' });
+          const id = safeStr(m.id, 60);
+          if (!id) return reply({ error: 'bad_id' });
+          await rtdb.ref('reports/' + id + '/handled').set(true);
+          await rtdb.ref('reports/' + id + '/handled_at').set(Date.now());
+          await rtdb.ref('reports/' + id + '/handled_by').set(u);
+          return reply({ ok: true });
+        }
         case 'season_reset': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actSeasonReset(u)); }
         default: return;
       }
