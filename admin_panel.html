@@ -9311,10 +9311,11 @@ function updatePlayer() {
           respawnPlayer('💧 익사로 사망! 마을에서 부활'); return;
         }
       }
-      showNotification(danger ? '💀 익사 중! 물에서 나오세요!' : '💧 수영 중',
-        { persistent: true, id: 'swim',
-          color: danger ? '#FF4444' : '#88CCFF',
-          border: danger ? '#FF6666' : '#4488FF' });
+      if (danger) {
+        showNotification('💀 익사 중! 물에서 나오세요!', { persistent: true, id: 'swim', color: '#FF4444', border: '#FF6666' });
+      } else {
+        showNotification('💧 수영 중', { persistent: true, id: 'swim', color: '#88CCFF', border: '#4488FF' });
+      }
     }
     return;
   }
@@ -15189,18 +15190,13 @@ function updateOcean() {
     }
   }
 
-  // 심해 잠수 알림 — 상태 변화 시에만 갱신 (매 프레임 호출 시 깜빡임 방지)
-  const _newOceanNotif = hasSuit ? 'suit' : (_oceanOxygen <= 0 ? 'empty' : 'nosuit');
-  if (window._lastOceanNotifState !== _newOceanNotif) {
-    window._lastOceanNotifState = _newOceanNotif;
-    dismissNotificationById('swim');
-    if (_newOceanNotif === 'suit') {
-      showNotification('🌊 심해 잠수 중', { persistent: true, id: 'swim', color: '#88CCFF', border: '#4488FF' });
-    } else if (_newOceanNotif === 'empty') {
-      showNotification('💀 산소 고갈! 잠수복을 착용하세요!', { persistent: true, id: 'swim', color: '#FF4444', border: '#FF6666' });
-    } else {
-      showNotification('⚠️ 산소 부족! 잠수복이 필요합니다', { persistent: true, id: 'swim', color: '#FFDD44', border: '#FFAA00' });
-    }
+  // 심해 잠수 알림 — 수영 중 알림과 완전히 동일한 방식
+  if (hasSuit) {
+    showNotification('🌊 심해 잠수 중', { persistent: true, id: 'swim', color: '#88CCFF', border: '#4488FF' });
+  } else if (_oceanOxygen <= 0) {
+    showNotification('💀 산소 고갈! 잠수복을 착용하세요!', { persistent: true, id: 'swim', color: '#FF4444', border: '#FF6666' });
+  } else {
+    showNotification('⚠️ 산소 부족! 잠수복이 필요합니다', { persistent: true, id: 'swim', color: '#FFDD44', border: '#FFAA00' });
   }
 
   // 기포 스폰
@@ -19937,6 +19933,8 @@ function showNotification(text, opts) {
       else existing.textContent = text;
     }
     existing._text = text;
+    if (opts?.color) existing.style.color = opts.color;
+    if (opts?.border) existing.style.borderColor = opts.border;
     return;
   }
 
