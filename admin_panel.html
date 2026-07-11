@@ -5253,6 +5253,14 @@ const DURABILITY_MAX = {
   pistol: 400,        smg: 500,           rifle: 450,        shotgun: 350,      sniper: 300,
   g11: 450, an94: 450, bizon: 520, gyrojet: 350, aa12: 420, m200: 280, rhino: 380, ppsh: 520, m1_garand: 430,
   staff: 200,         fire_staff: 300,    ice_staff: 300,
+  // ---- 🛡️ 방어구 내구도 (헬멧/갑옷/부츠) ----
+  leather_helm: 100,  iron_helm: 250,     gold_helm: 400,
+  leather_armor: 150, iron_armor: 350,    gold_armor: 500,    diamond_armor: 800,
+  leather_boots: 100, iron_boots: 250,    gold_boots: 400,
+  space_suit: 500,    diving_suit: 400,   radiation_suit: 400, aramid_armor: 900,
+  // ---- 🚗 차량 내구도 (탈것 HP) ----
+  car: 300,  bulldozer: 400, tank: 800,
+  airplane: 250, jet: 300, fighter: 400, bomber: 500,
 };
 
 // 채굴 속도 배율 (클수록 빠름, 기본 1=맨손)
@@ -8810,6 +8818,34 @@ function drawMinimap() {
     // 궤도 라인
     minimapCtx.strokeStyle = 'rgba(120,180,255,0.3)'; minimapCtx.lineWidth = 0.5;
     minimapCtx.beginPath(); minimapCtx.moveTo(0, 7); minimapCtx.lineTo(150, 7); minimapCtx.stroke();
+  }
+
+  // 🐲 월드보스 위치 (미니맵) — 우주 아닐 때만
+  if (worldBossState && !spaceMode && !dungeonMode && !oceanMode) {
+    const bmx = (worldBossState.x / TILE) * scale;
+    const bmy = (worldBossState.y / TILE) * scale * 1.5;
+    if (bmx >= 0 && bmx <= 150 && bmy >= 0 && bmy <= 150) {
+      const pulse = 0.4 + Math.sin(Date.now()/180)*0.6;
+      // 빛나는 원
+      minimapCtx.fillStyle = `rgba(255,50,80,${0.4+pulse*0.4})`;
+      minimapCtx.beginPath(); minimapCtx.arc(bmx, bmy, 5+pulse*3, 0, Math.PI*2); minimapCtx.fill();
+      // 드래곤 이모지
+      minimapCtx.font = '10px sans-serif'; minimapCtx.textAlign='center'; minimapCtx.textBaseline='middle';
+      minimapCtx.fillStyle = '#fff';
+      minimapCtx.fillText('🐲', bmx, bmy);
+    } else {
+      // 미니맵 밖 → 가장자리에 방향 표시
+      const cx = 75, cy = 75;
+      const ang = Math.atan2(bmy - cy, bmx - cx);
+      const ex = Math.max(6, Math.min(144, cx + Math.cos(ang) * 70));
+      const ey = Math.max(6, Math.min(144, cy + Math.sin(ang) * 70));
+      minimapCtx.fillStyle = '#ff4466';
+      minimapCtx.beginPath();
+      minimapCtx.moveTo(ex + Math.cos(ang)*4, ey + Math.sin(ang)*4);
+      minimapCtx.lineTo(ex + Math.cos(ang+2.5)*3, ey + Math.sin(ang+2.5)*3);
+      minimapCtx.lineTo(ex + Math.cos(ang-2.5)*3, ey + Math.sin(ang-2.5)*3);
+      minimapCtx.closePath(); minimapCtx.fill();
+    }
   }
 
   // 내 위치 = 빨간 화살표 (가장 위에 그려야 항상 보임)
@@ -14899,16 +14935,164 @@ function updateWorldBossHUD() {
   if (!hud) {
     hud = document.createElement('div');
     hud.id = 'worldBossHUD';
-    hud.style.cssText = 'position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:600;background:linear-gradient(180deg,#3a0010,#1a0000);border:2px solid #ff3355;border-radius:6px;padding:8px 16px;font-family:"Press Start 2P",monospace;color:#ffbbcc;font-size:9px;min-width:320px;text-align:center;box-shadow:0 4px 20px rgba(255,50,80,0.4);';
+    hud.style.cssText = `
+      position:fixed; top:14px; left:50%; transform:translateX(-50%);
+      z-index:600; min-width:min(520px, 90vw); pointer-events:none;
+      font-family:'Press Start 2P',monospace;
+      animation: bossHudPulse 2.4s ease-in-out infinite;
+    `;
+    // 애니메이션 CSS
+    if (!document.getElementById('bossHudStyle')) {
+      const st = document.createElement('style');
+      st.id = 'bossHudStyle';
+      st.textContent = `
+        @keyframes bossHudPulse {
+          0%,100% { filter: drop-shadow(0 0 8px rgba(255,50,80,0.5)); }
+          50%     { filter: drop-shadow(0 0 18px rgba(255,80,120,0.85)); }
+        }
+        @keyframes bossHpFlash {
+          0%,100% { background-position: 0% 0%; }
+          50%     { background-position: 100% 0%; }
+        }
+        .boss-hp-fill {
+          background: linear-gradient(90deg, #ff2244 0%, #ff6644 30%, #ffaa44 50%, #ff6644 70%, #ff2244 100%);
+          background-size: 200% 100%;
+          animation: bossHpFlash 1.6s linear infinite;
+          height:100%; transition: width 0.4s cubic-bezier(.6,-0.2,.4,1.2);
+          box-shadow: 0 0 12px rgba(255,80,80,0.7) inset, 0 0 8px rgba(255,60,60,0.5);
+        }
+      `;
+      document.head.appendChild(st);
+    }
     document.body.appendChild(hud);
   }
   const pct = Math.max(0, worldBossState.hp / worldBossState.maxHp);
+  const parts = worldBossState.participants || {};
+  const top3 = Object.entries(parts).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  const partCount = Object.keys(parts).length;
+
+  // 화면 밖 방향 계산
+  const bossX = worldBossState.x, bossY = worldBossState.y;
+  const cx = (player && camera) ? (player.x + player.w/2) : 0;
+  const cy = (player && camera) ? (player.y + player.h/2) : 0;
+  const dx = bossX - cx, dy = bossY - cy;
+  const dist = Math.hypot(dx, dy);
+  const distTiles = Math.round(dist / (TILE || 32));
+  const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+
   hud.innerHTML = `
-    <div style="margin-bottom:4px;color:#ff6688;">🐲 ${worldBossState.name}</div>
-    <div style="background:#200005;height:12px;border:1px solid #660015;border-radius:2px;overflow:hidden;">
-      <div style="background:linear-gradient(90deg,#ff3355,#ff8844);height:100%;width:${pct*100}%;transition:width 0.3s;"></div>
+    <div style="
+      background: linear-gradient(180deg, rgba(20,0,10,0.96) 0%, rgba(45,5,20,0.94) 100%);
+      border: 3px solid transparent;
+      border-image: linear-gradient(180deg, #ff5577, #661122) 1;
+      padding: 10px 18px 12px;
+      position: relative;
+    ">
+      <!-- 상단 라벨 -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:16px;">🐲</span>
+          <span style="color:#ff6688; font-size:11px; letter-spacing:2px; text-shadow: 0 0 8px rgba(255,100,120,0.7);">
+            WORLD BOSS
+          </span>
+          <span style="color:#ffbbcc; font-size:9px;">${worldBossState.name}</span>
+        </div>
+        <div style="color:#aa6677; font-size:8px;">
+          👥 ${partCount}명 참전
+          <span style="color:#ff8899; margin-left:6px;">↖ ${distTiles}칸</span>
+        </div>
+      </div>
+
+      <!-- HP 바 -->
+      <div style="
+        background: #10000a; height: 22px;
+        border: 2px solid #661122;
+        box-shadow: 0 0 15px rgba(255,50,80,0.4) inset, 0 2px 4px rgba(0,0,0,0.8);
+        position: relative; overflow: hidden;
+      ">
+        <div class="boss-hp-fill" style="width: ${pct*100}%;"></div>
+        <!-- HP 텍스트 오버레이 -->
+        <div style="
+          position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+          color: #fff; font-size: 10px; letter-spacing: 1px;
+          text-shadow: 1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000, 0 0 6px rgba(255,80,80,0.9);
+        ">
+          ${worldBossState.hp.toLocaleString()} / ${worldBossState.maxHp.toLocaleString()}
+          <span style="margin-left:8px; color:#ffdd88;">${(pct*100).toFixed(1)}%</span>
+        </div>
+      </div>
+
+      <!-- 딜링 랭킹 + 내 딜 -->
+      <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:7.5px;">
+        <div style="color:#8890bb;">
+          ${top3.map((t, i) => `<span style="color:${['#ffd700','#c8c8dd','#cd7f32'][i]}; margin-right:8px;">${['🥇','🥈','🥉'][i]} ${t[0]} <span style="color:#ff8899;">${t[1].toLocaleString()}</span></span>`).join('')}
+        </div>
+        <div style="color:${_worldBossMyDmg > 0 ? '#ffdd66' : '#5a628f'};">
+          내 딜: <span style="color:#ff8899;">${_worldBossMyDmg.toLocaleString()}</span>
+        </div>
+      </div>
     </div>
-    <div style="font-size:7px;color:#aa6677;margin-top:3px;">${worldBossState.hp} / ${worldBossState.maxHp}${_worldBossMyDmg?' · 내 딜: '+_worldBossMyDmg:''}</div>`;
+  `;
+
+  // 화면 밖이면 방향 화살표 표시
+  updateBossDirectionArrow(bossX, bossY);
+}
+
+// 🎯 화면 밖 보스 방향 화살표
+function updateBossDirectionArrow(bossX, bossY) {
+  let arrow = document.getElementById('bossDirArrow');
+  if (!worldBossState || !player || !canvas) { if (arrow) arrow.remove(); return; }
+  const sx = bossX - camera.x, sy = bossY - camera.y;
+  const W = canvas.width, H = canvas.height;
+  const onScreen = sx > -50 && sx < W + 50 && sy > -50 && sy < H + 50;
+  if (onScreen) { if (arrow) arrow.remove(); return; }
+  if (!arrow) {
+    arrow = document.createElement('div');
+    arrow.id = 'bossDirArrow';
+    arrow.style.cssText = `
+      position:fixed; z-index:590; pointer-events:none;
+      font-family:'Press Start 2P',monospace;
+      transition: left 0.15s, top 0.15s;
+      filter: drop-shadow(0 0 8px rgba(255,60,80,0.8));
+    `;
+    document.body.appendChild(arrow);
+  }
+  // 화면 중앙에서 보스 방향 벡터
+  const canvasRect = canvas.getBoundingClientRect();
+  const centerX = canvasRect.left + W / 2;
+  const centerY = canvasRect.top + H / 2;
+  const angle = Math.atan2(sy - H/2, sx - W/2);
+  const margin = 60;
+  const maxX = W/2 - margin, maxY = H/2 - margin;
+  // 가장자리로 클램프
+  let px, py;
+  const t = Math.min(maxX / Math.abs(Math.cos(angle)), maxY / Math.abs(Math.sin(angle)));
+  px = centerX + Math.cos(angle) * t;
+  py = centerY + Math.sin(angle) * t;
+  const distTiles = Math.round(Math.hypot(bossX - (player.x + player.w/2), bossY - (player.y + player.h/2)) / (TILE || 32));
+  arrow.style.left = (px - 28) + 'px';
+  arrow.style.top = (py - 28) + 'px';
+  arrow.innerHTML = `
+    <div style="position:relative; width:56px; height:56px;">
+      <div style="
+        position:absolute; inset:0;
+        display:flex; align-items:center; justify-content:center;
+        background: radial-gradient(circle, rgba(255,40,80,0.9) 0%, rgba(80,0,20,0.7) 70%);
+        border: 2px solid #ff4466;
+        border-radius: 50%;
+        transform: rotate(${angle * 180/Math.PI + 90}deg);
+        animation: bossHudPulse 1.2s infinite;
+      ">
+        <div style="font-size:24px; transform: rotate(-${angle * 180/Math.PI + 90}deg);">🐲</div>
+      </div>
+      <div style="
+        position:absolute; left:50%; transform:translateX(-50%);
+        bottom:-16px; font-size:8px; color:#ff8899;
+        text-shadow: 1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000;
+        white-space:nowrap;
+      ">${distTiles}칸</div>
+    </div>
+  `;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -15235,6 +15419,28 @@ function hasAramidArmor() {
 function damagePlayerByAttack(dmg) {
   if (!player) return;
   if (dmg > 0) SFX.hurt();
+  // 🛡️ 방어구 내구도 감소 (피격 시)
+  if (dmg > 0 && player.equipment) {
+    for (const slot of ['head', 'body', 'feet']) {
+      const eq = player.equipment[slot];
+      if (!eq || !DURABILITY_MAX[eq]) continue;
+      const invSlot = (player.inventory || []).find(s => s && s.id === eq);
+      if (!invSlot) continue;
+      if (invSlot.durability === undefined) invSlot.durability = DURABILITY_MAX[eq];
+      invSlot.durability -= Math.max(1, Math.floor(dmg * 0.3));
+      const _max = DURABILITY_MAX[eq];
+      if (invSlot.durability <= 0) {
+        // 방어구 파괴 → 인벤에서 제거 + 슬롯 해제
+        const idx = player.inventory.indexOf(invSlot);
+        if (idx >= 0) player.inventory.splice(idx, 1);
+        player.equipment[slot] = null;
+        showNotification(`💥 ${ITEMS[eq]?.name || eq} 파괴됨!`, '#FF4444');
+        addChatMessage('시스템', `💥 ${ITEMS[eq]?.name || eq}이(가) 파괴되었습니다!`, '#FF4444');
+      } else if (invSlot.durability === Math.ceil(_max * 0.2)) {
+        showNotification(`⚠️ ${ITEMS[eq]?.name || eq} 내구도 20%!`, '#FFAA33');
+      }
+    }
+  }
   const after = player.hp - dmg;
   if (hasAramidArmor()) {
     // 이미 10 이상이면 10 아래로 안 떨어지고, 회복도 안 됨
