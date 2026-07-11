@@ -5522,6 +5522,13 @@ const ITEMS = {
   laser_controller: { name: '위성 레이저 제어기', icon: '🔫', type: 'weapon', desc: '내 위성으로 지상에 궤도 레이저 발사! (위성 필요)', range: 30, orbitalLaser: true, fireRate: 90 },
   alien_crystal: { name: '외계 수정', icon: '🔮', type: 'material', desc: '행성에서만 나는 초고가 자원', stackable: true },
   meteor_iron: { name: '운철', icon: '🪨', type: 'material', desc: '우주 운석에서 채굴한 순수 철', stackable: true },
+  // ---- 🌊 심해 탐사 ----
+  diving_suit: { name: '잠수복', icon: '🤿', type: 'armor', slot: 'body', desc: '심해에서 수압으로부터 보호 · 미착용 시 수압으로 사망', def: 10, diving: true },
+  deep_pearl: { name: '심해 진주', icon: '🫧', type: 'material', desc: '심해에서만 나는 희귀 진주', stackable: true },
+  abyss_ore: { name: '심연 광석', icon: '💠', type: 'material', desc: '심해 최심부의 광석 (초고가)', stackable: true },
+  coral: { name: '산호', icon: '🪸', type: 'material', desc: '심해 산호 조각', stackable: true },
+  kraken_ink: { name: '크라켄 먹물', icon: '🖤', type: 'material', desc: '심해 보스가 남기는 검은 먹물', stackable: true },
+  giant_pearl: { name: '거대 진주', icon: '⚪', type: 'material', desc: '전설의 거대 진주 (엄청난 가치)', stackable: true },
   // ---- 낚시 아이템 ----
   raw_salmon: { name: '연어', icon: '🐟', type: 'food', desc: 'HP +18', heal: 18, stackable: true },
   raw_tuna: { name: '참치', icon: '🐟', type: 'food', desc: 'HP +22', heal: 22, stackable: true },
@@ -5615,6 +5622,7 @@ const RECIPES = [
   { result: 'nuke', amount: 1, ingredients: { uranium: 10, iron_ingot: 25, gunpowder: 20, diamond: 5, gold_ingot: 10 }, name: '☢️ 핵폭탄 (극악)' },
   // ---- 🚀 우주 탐사 (제작 극악) ----
   { result: 'space_suit', amount: 1, ingredients: { iron_ingot: 20, glass: 6, copper_ingot: 8, crystal: 2 }, name: '우주복' },
+  { result: 'diving_suit', amount: 1, ingredients: { iron_ingot: 8, glass: 4, copper_ingot: 4, seaweed: 6 }, name: '잠수복' },
   { result: 'radiation_suit', amount: 1, ingredients: { iron_ingot: 18, uranium: 2, copper_ingot: 6, glass: 4 }, name: '방사능 방호복' },
   { result: 'aramid_armor', amount: 1, ingredients: { alien_crystal: 12, meteor_iron: 15, diamond: 10, gold_ingot: 20, uranium: 5, crystal: 8 }, name: '🦺 아라미드 초합금 갑옷 (극악)' },
   { result: 'rocket_item', amount: 1, ingredients: { iron_ingot: 100, gold_ingot: 30, copper_ingot: 40, gunpowder: 25, diamond: 10, glass: 20 }, name: '🚀 유인 탐사선 (극악)' },
@@ -6728,6 +6736,46 @@ let _camShake = 0; // 카메라 흔들림 강도 (레이저/폭발)
 let _spaceStarField = null;
 let _laserBeams = []; // 시각용 궤도 레이저 빔 { x, y0, y1, life, owner }
 let dungeonBossActive = false;
+
+// ═══════════════════════════════════════════════════════════
+// 🌊 심해 / 🐲 월드보스 / ⚔️ PVP 아레나 / 💹 동적 상점 — 통합 상태
+// ═══════════════════════════════════════════════════════════
+// 🌊 심해
+let oceanMode = false;
+let savedOverworldOcean = null;
+let playerPressure = 100;             // 수압 저항 게이지 (잠수복 없으면 0으로 감소)
+const PRESSURE_MAX = 100;
+let _oceanFishSchool = [];            // 심해 생물
+
+// 🐲 월드보스 (Firebase 동기화)
+let worldBossState = null;            // { id, hp, maxHp, x, y, name, spawnAt, participants: {name: dmg} }
+let _worldBossRef = null;
+let _worldBossMyDmg = 0;
+
+// ⚔️ PVP 아레나
+let arenaState = null;                // { inMatch, opponent, roundStart, myHp, oppHp }
+let arenaRating = 1000;               // 로컬 캐시 (Firebase 소스)
+let _arenaMatchRef = null;
+let _arenaQueueRef = null;
+
+// 💹 동적 상점 (NPC 상인) — 아이템별 매매 카운트로 가격 변동
+let marketPrices = {};                // { itemId: { base, mul, buys, sells, lastUpdate } }
+let _marketRef = null;
+const MARKET_ITEMS = [
+  { id: 'deep_pearl',    base: 40 },
+  { id: 'abyss_ore',     base: 120 },
+  { id: 'coral',         base: 15 },
+  { id: 'kraken_ink',    base: 200 },
+  { id: 'giant_pearl',   base: 800 },
+  { id: 'raw_salmon',    base: 8 },
+  { id: 'raw_tuna',      base: 12 },
+  { id: 'golden_fish',   base: 60 },
+  { id: 'seaweed',       base: 3 },
+  { id: 'iron_ingot',    base: 25 },
+  { id: 'meteor_iron',   base: 90 },
+  { id: 'alien_crystal', base: 500 },
+];
+
 
 // ---- TRADE SYSTEM ----
 let tradeState = null;
@@ -12935,9 +12983,16 @@ function showSettings() {
         <div style="font-size:8px;color:#FF4466;margin:14px 0 6px;letter-spacing:1px;">— 🛡️ 관리자 전용 —</div>
         <div style="display:flex;flex-direction:column;gap:6px;padding:6px 4px;">
           <button onclick="closePanel();showAdminPanel();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#3a1020,#1a0510);border-top:2px solid #7a2040;border-left:2px solid #7a2040;border-bottom:2px solid #200008;border-right:2px solid #200008;color:#ff88aa;cursor:pointer;letter-spacing:1px;">🛡️ 관리자 패널 열기</button>
+          <button onclick="closePanel();spawnWorldBoss();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#3a1010,#1a0505);border:2px solid #ff3355;color:#ffbbcc;cursor:pointer;">🐲 월드보스 소환</button>
           <div style="font-size:6.5px;color:#5a628f;text-align:center;line-height:1.6;">유저 관리·신고 확인·아이템 지급<br>단축키: [ \\ ] (백슬래시)</div>
         </div>
       ` : ''}
+      <div style="font-size:8px;color:#FFD24A;margin:14px 0 6px;letter-spacing:1px;">— 🌟 신규 콘텐츠 —</div>
+      <div style="display:flex;flex-direction:column;gap:6px;padding:6px 4px;">
+        <button onclick="closePanel();tryEnterOcean();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#0a1a3a,#050a20);border:2px solid #4488ff;color:#88ccff;cursor:pointer;">🌊 심해 탐사 (잠수복 필요)</button>
+        <button onclick="closePanel();showArenaRanking();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#2a0a2a,#150515);border:2px solid #ff4488;color:#ff88cc;cursor:pointer;">⚔️ PVP 아레나 (1v1)</button>
+        <button onclick="closePanel();openMarketNPC();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#2a1a05,#150a02);border:2px solid #ffaa44;color:#ffcc88;cursor:pointer;">💹 방랑 상인 (동적 시세)</button>
+      </div>
     </div>`;
 }
 
@@ -14675,6 +14730,440 @@ function _doReturnFromSpace() {
   _bgMtnCache = null; _bgSkyCache = null; _bgStarCanvas = null; _tileLayerDirty = true;
   showNotification('🌍 지구로 귀환했습니다!');
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🌊 심해 시스템 — 잠수복 필요, 심해 자원 채굴
+// ═══════════════════════════════════════════════════════════════════════════
+function tryEnterOcean() {
+  if (spaceMode || dungeonMode || oceanMode) return;
+  // 바다 근처(맵 가장자리 or 물 타일 위)에서만 진입
+  // 간단하게 어디서든 아이템으로 진입 가능하게, 대신 잠수복 없으면 진입도 못하게
+  const hasSuit = playerEquipmentHas('diving_suit');
+  if (!hasSuit) {
+    showNotification('🤿 잠수복이 필요합니다! (제작 필요)', { duration: 2500 });
+    return;
+  }
+  savedOverworldOcean = {
+    world, animals, playerX: player.x, playerY: player.y,
+    farmPlots: farmPlots.slice(), droppedItems: droppedItems.slice(),
+    dungeonBuildings,
+  };
+  world = generateOceanWorld();
+  farmPlots = []; droppedItems = []; animals = [];
+  dungeonBuildings = []; corpseBoxes = []; placedChests = []; parkedVehicles = []; otherPlayers = {};
+  player.x = 10 * TILE; player.y = 10 * TILE; player.vx = 0; player.vy = 0;
+  playerPressure = PRESSURE_MAX;
+  oceanMode = true;
+  markMinimapDirty(); _minimapWorldCanvas = null; _tileLayerDirty = true;
+  showNotification('🌊 심해에 진입했습니다! 잠수복 유지 필수! [E]로 자원 채굴', { duration: 3500 });
+  addChatMessage('시스템', '🌊 심해 도착! 진주·산호·심연광석을 채취하세요', '#4488FF');
+}
+// 심해 월드 생성 — 파랑/보라 배경, 자원 타일
+function generateOceanWorld() {
+  const w = [];
+  for (let y = 0; y < WORLD_H; y++) {
+    w[y] = [];
+    for (let x = 0; x < WORLD_W; x++) {
+      // 심해 자원 랜덤 배치 (희소하게)
+      const r = Math.random();
+      if (r < 0.005) w[y][x] = { type: 'ocean_pearl' };
+      else if (r < 0.008) w[y][x] = { type: 'ocean_ore' };
+      else if (r < 0.015) w[y][x] = { type: 'ocean_coral' };
+      else w[y][x] = null;
+    }
+  }
+  return w;
+}
+function playerEquipmentHas(itemId) {
+  try {
+    if (!player || !player.equipment) return false;
+    for (const slot in player.equipment) {
+      if (player.equipment[slot] === itemId) return true;
+    }
+    // 인벤에도 있으면 인정 (편의)
+    return (player.inventory || []).some(s => s && s.id === itemId);
+  } catch(e) { return false; }
+}
+// 심해 채집 (E키/우클릭)
+function tryHarvestOcean() {
+  if (!oceanMode || !player) return false;
+  const tx = Math.floor(player.x / TILE);
+  const ty = Math.floor(player.y / TILE);
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const cy = ty + dy, cx = tx + dx;
+      if (cy < 0 || cy >= WORLD_H || cx < 0 || cx >= WORLD_W) continue;
+      const cell = world[cy] && world[cy][cx];
+      if (!cell) continue;
+      let itemId = null;
+      if (cell.type === 'ocean_pearl') itemId = 'deep_pearl';
+      else if (cell.type === 'ocean_ore') itemId = 'abyss_ore';
+      else if (cell.type === 'ocean_coral') itemId = 'coral';
+      if (itemId) {
+        addToInventory(player, itemId, 1);
+        world[cy][cx] = null;
+        _tileLayerDirty = true;
+        showNotification('🫧 ' + (ITEMS[itemId]?.name || itemId) + ' 획득!', { duration: 1200 });
+        return true;
+      }
+    }
+  }
+  return false;
+}
+// 심해 나가기
+function exitOcean() {
+  if (!oceanMode || !savedOverworldOcean) return;
+  world = savedOverworldOcean.world;
+  animals = savedOverworldOcean.animals;
+  dungeonBuildings = savedOverworldOcean.dungeonBuildings;
+  farmPlots = savedOverworldOcean.farmPlots;
+  droppedItems = savedOverworldOcean.droppedItems;
+  player.x = savedOverworldOcean.playerX;
+  player.y = savedOverworldOcean.playerY;
+  player.vx = 0; player.vy = 0;
+  savedOverworldOcean = null;
+  oceanMode = false;
+  playerPressure = PRESSURE_MAX;
+  otherPlayers = {};
+  markMinimapDirty(); _minimapWorldCanvas = null; _tileLayerDirty = true;
+  showNotification('🌊 지상으로 귀환!');
+}
+window.tryEnterOcean = tryEnterOcean;
+window.exitOcean = exitOcean;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🐲 월드보스 (드래곤) — Firebase 동기화, 전 서버 공유
+// ═══════════════════════════════════════════════════════════════════════════
+function initWorldBoss() {
+  if (isOffline || !supabase || !supabase.db) return;
+  try {
+    _worldBossRef = supabase.db.ref('worldBoss/current');
+    _worldBossRef.on('value', snap => {
+      const v = snap.val();
+      worldBossState = v && v.hp > 0 ? v : null;
+      updateWorldBossHUD();
+    });
+  } catch(e) { console.warn('worldBoss init 실패', e); }
+}
+// 관리자용: 월드보스 소환
+window.spawnWorldBoss = async function() {
+  if (isOffline || !supabase || !supabase.db) return;
+  const boss = {
+    id: 'wb_' + Date.now(),
+    name: '고대 드래곤',
+    hp: 5000, maxHp: 5000,
+    x: WORLD_W * TILE / 2, y: 100,
+    spawnAt: Date.now(),
+    participants: {}
+  };
+  await supabase.db.ref('worldBoss/current').set(boss);
+  addChatMessage('경보', '🐲 고대 드래곤이 강림했습니다!', '#FF4466');
+};
+// 딜 넣기 (플레이어가 공격 시)
+window.dealWorldBossDamage = async function(dmg) {
+  if (!worldBossState || !worldBossState.hp || !supabase || !supabase.db) return;
+  const bref = supabase.db.ref('worldBoss/current');
+  let cleared = false;
+  await bref.child('hp').transaction(cur => {
+    if (cur == null || cur <= 0) return;
+    const nh = Math.max(0, cur - dmg);
+    if (nh <= 0) cleared = true;
+    return nh;
+  });
+  const name = (player && player.name) || 'unknown';
+  await bref.child('participants/' + name.replace(/[^\w가-힣]/g, '_'))
+    .transaction(cur => (cur || 0) + dmg);
+  _worldBossMyDmg += dmg;
+  if (cleared) {
+    // 처치 보상 분배 (상위 3명)
+    const snap = await bref.get();
+    const v = snap.val();
+    if (v && v.participants) {
+      const top = Object.entries(v.participants).sort((a,b)=>b[1]-a[1]).slice(0,3);
+      const myName = name.replace(/[^\w가-힣]/g, '_');
+      const rank = top.findIndex(t => t[0] === myName);
+      if (rank >= 0) {
+        const rewards = [1000, 500, 250];
+        player.gold = (player.gold || 0) + rewards[rank];
+        addToInventory(player, 'giant_pearl', rank === 0 ? 2 : 1);
+        showNotification(`🏆 월드보스 처치 ${rank+1}위! +${rewards[rank]}G +거대 진주`, { duration: 4000 });
+        addChatMessage('보상', `🏆 ${player.name} 월드보스 ${rank+1}위!`, '#FFD700');
+      }
+    }
+    await bref.remove();
+  }
+};
+function updateWorldBossHUD() {
+  let hud = document.getElementById('worldBossHUD');
+  if (!worldBossState) { if (hud) hud.remove(); return; }
+  if (!hud) {
+    hud = document.createElement('div');
+    hud.id = 'worldBossHUD';
+    hud.style.cssText = 'position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:600;background:linear-gradient(180deg,#3a0010,#1a0000);border:2px solid #ff3355;border-radius:6px;padding:8px 16px;font-family:"Press Start 2P",monospace;color:#ffbbcc;font-size:9px;min-width:320px;text-align:center;box-shadow:0 4px 20px rgba(255,50,80,0.4);';
+    document.body.appendChild(hud);
+  }
+  const pct = Math.max(0, worldBossState.hp / worldBossState.maxHp);
+  hud.innerHTML = `
+    <div style="margin-bottom:4px;color:#ff6688;">🐲 ${worldBossState.name}</div>
+    <div style="background:#200005;height:12px;border:1px solid #660015;border-radius:2px;overflow:hidden;">
+      <div style="background:linear-gradient(90deg,#ff3355,#ff8844);height:100%;width:${pct*100}%;transition:width 0.3s;"></div>
+    </div>
+    <div style="font-size:7px;color:#aa6677;margin-top:3px;">${worldBossState.hp} / ${worldBossState.maxHp}${_worldBossMyDmg?' · 내 딜: '+_worldBossMyDmg:''}</div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ⚔️ PVP 아레나 — 1v1 매칭 + 랭킹
+// ═══════════════════════════════════════════════════════════════════════════
+async function joinArenaQueue() {
+  if (isOffline || !supabase || !supabase.db || !player) return;
+  const name = player.name;
+  const qRef = supabase.db.ref('arena/queue');
+  // 다른 대기자 찾기
+  const snap = await qRef.get();
+  const queue = snap.val() || {};
+  const others = Object.entries(queue).filter(([k,v]) => k !== name && v && Date.now() - v.at < 60000);
+  if (others.length > 0) {
+    // 매칭 성사
+    const [oppName, oppData] = others[0];
+    const matchId = 'm_' + [name, oppName].sort().join('_') + '_' + Date.now();
+    await supabase.db.ref('arena/matches/' + matchId).set({
+      p1: name, p2: oppName, start: Date.now(),
+      p1_hp: 100, p2_hp: 100, winner: null
+    });
+    await qRef.child(oppName).remove();
+    startArenaMatch(matchId, oppName);
+  } else {
+    // 대기열 등록
+    await qRef.child(name).set({ at: Date.now(), rating: arenaRating });
+    showNotification('⚔️ 매칭 대기 중... (최대 60초)', { duration: 3000 });
+    // 대기열 리스너
+    _arenaQueueRef = supabase.db.ref('arena/matches');
+    _arenaQueueRef.on('child_added', snap2 => {
+      const m = snap2.val();
+      if (!m || (m.p1 !== name && m.p2 !== name)) return;
+      const opp = m.p1 === name ? m.p2 : m.p1;
+      startArenaMatch(snap2.key, opp);
+    });
+    // 60초 후 자동 취소
+    setTimeout(async () => {
+      const st = await qRef.child(name).get();
+      if (st.exists()) { await qRef.child(name).remove(); showNotification('⏰ 매칭 실패'); }
+    }, 60000);
+  }
+}
+function startArenaMatch(matchId, opponent) {
+  if (arenaState) return;
+  arenaState = { inMatch: true, opponent, matchId, myHp: 100, oppHp: 100, start: Date.now() };
+  if (_arenaQueueRef) { _arenaQueueRef.off(); _arenaQueueRef = null; }
+  _arenaMatchRef = supabase.db.ref('arena/matches/' + matchId);
+  _arenaMatchRef.on('value', snap => {
+    const m = snap.val();
+    if (!m) { endArenaMatch(null); return; }
+    const myKey = m.p1 === player.name ? 'p1_hp' : 'p2_hp';
+    const oppKey = m.p1 === player.name ? 'p2_hp' : 'p1_hp';
+    arenaState.myHp = m[myKey]; arenaState.oppHp = m[oppKey];
+    if (m.winner) { endArenaMatch(m.winner === player.name); }
+    updateArenaHUD();
+  });
+  showNotification(`⚔️ 매칭! vs ${opponent}`, { duration: 3000 });
+  addChatMessage('아레나', `⚔️ ${player.name} vs ${opponent}`, '#FF88AA');
+}
+window.arenaAttack = async function() {
+  if (!arenaState || !_arenaMatchRef) return;
+  const myKey = 'p1_hp'; // 서버에서 계산해야 하지만 단순화
+  const oppKey = arenaState.opponent;
+  await _arenaMatchRef.transaction(m => {
+    if (!m || m.winner) return m;
+    const isP1 = m.p1 === player.name;
+    const dmgKey = isP1 ? 'p2_hp' : 'p1_hp';
+    m[dmgKey] = Math.max(0, (m[dmgKey] || 100) - 10);
+    if (m[dmgKey] <= 0) m.winner = player.name;
+    return m;
+  });
+};
+async function endArenaMatch(won) {
+  if (_arenaMatchRef) { _arenaMatchRef.off(); _arenaMatchRef = null; }
+  if (won === true) {
+    arenaRating += 25;
+    player.gold = (player.gold || 0) + 100;
+    showNotification(`🏆 승리! +25점 (레이팅 ${arenaRating}) +100G`, { duration: 3500 });
+  } else if (won === false) {
+    arenaRating = Math.max(0, arenaRating - 15);
+    showNotification(`💔 패배... -15점 (레이팅 ${arenaRating})`, { duration: 3500 });
+  }
+  if (supabase && supabase.db && player) {
+    supabase.db.ref('arena/ratings/' + player.name).set({ rating: arenaRating, name: player.name });
+  }
+  arenaState = null;
+  document.getElementById('arenaHUD')?.remove();
+}
+function updateArenaHUD() {
+  let hud = document.getElementById('arenaHUD');
+  if (!arenaState) { if (hud) hud.remove(); return; }
+  if (!hud) {
+    hud = document.createElement('div');
+    hud.id = 'arenaHUD';
+    hud.style.cssText = 'position:fixed;top:110px;left:50%;transform:translateX(-50%);z-index:600;background:#1a0a2a;border:2px solid #ff88cc;border-radius:6px;padding:10px 18px;font-family:"Press Start 2P",monospace;color:#ffccee;font-size:8px;min-width:280px;text-align:center;';
+    document.body.appendChild(hud);
+  }
+  hud.innerHTML = `
+    <div style="color:#ff88cc;margin-bottom:6px;">⚔️ ARENA vs ${arenaState.opponent}</div>
+    <div style="display:flex;justify-content:space-between;font-size:7px;">
+      <span>내 HP: ${arenaState.myHp}</span>
+      <span>상대: ${arenaState.oppHp}</span>
+    </div>
+    <button onclick="window.arenaAttack()" style="margin-top:6px;font-family:inherit;font-size:7px;padding:5px 12px;background:#3a0a1a;border:2px solid #ff4488;color:#fff;cursor:pointer;">🗡️ 공격 (-10)</button>`;
+}
+window.joinArenaQueue = joinArenaQueue;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 💹 동적 상점 NPC — 아이템별 가격 수요/공급에 따라 변동
+// ═══════════════════════════════════════════════════════════════════════════
+function initMarket() {
+  if (isOffline || !supabase || !supabase.db) {
+    // 오프라인이면 로컬 초기화
+    for (const it of MARKET_ITEMS) marketPrices[it.id] = { base: it.base, mul: 1.0, buys: 0, sells: 0 };
+    return;
+  }
+  _marketRef = supabase.db.ref('market/prices');
+  _marketRef.on('value', snap => {
+    const v = snap.val() || {};
+    for (const it of MARKET_ITEMS) {
+      marketPrices[it.id] = v[it.id] || { base: it.base, mul: 1.0, buys: 0, sells: 0 };
+    }
+  });
+}
+function getMarketPrice(itemId) {
+  const m = marketPrices[itemId];
+  if (!m) return null;
+  return Math.max(1, Math.round(m.base * (m.mul || 1)));
+}
+window.marketSell = async function(itemId, count) {
+  count = Math.max(1, Math.floor(count || 1));
+  if (!player) return;
+  const slot = (player.inventory || []).find(s => s && s.id === itemId);
+  if (!slot || slot.count < count) { showNotification('❌ 아이템 부족'); return; }
+  const price = getMarketPrice(itemId);
+  if (!price) return;
+  const total = price * count;
+  slot.count -= count;
+  if (slot.count <= 0) player.inventory.splice(player.inventory.indexOf(slot), 1);
+  player.gold = (player.gold || 0) + total;
+  // 가격 갱신 (공급 증가 → 가격 하락)
+  if (supabase && supabase.db) {
+    supabase.db.ref('market/prices/' + itemId).transaction(cur => {
+      const base = (cur && cur.base) || MARKET_ITEMS.find(x=>x.id===itemId)?.base || 10;
+      const sells = ((cur && cur.sells) || 0) + count;
+      const buys = (cur && cur.buys) || 0;
+      const diff = buys - sells;
+      const mul = Math.max(0.5, Math.min(1.5, 1 + diff * 0.02));
+      return { base, mul, buys, sells };
+    });
+  }
+  showNotification(`💰 ${count}개 판매 → +${total}G`, { duration: 1800 });
+};
+window.marketBuy = async function(itemId, count) {
+  count = Math.max(1, Math.floor(count || 1));
+  if (!player) return;
+  const price = getMarketPrice(itemId);
+  if (!price) return;
+  const total = price * count;
+  if ((player.gold || 0) < total) { showNotification('❌ 골드 부족'); return; }
+  player.gold -= total;
+  addToInventory(player, itemId, count);
+  if (supabase && supabase.db) {
+    supabase.db.ref('market/prices/' + itemId).transaction(cur => {
+      const base = (cur && cur.base) || MARKET_ITEMS.find(x=>x.id===itemId)?.base || 10;
+      const buys = ((cur && cur.buys) || 0) + count;
+      const sells = (cur && cur.sells) || 0;
+      const diff = buys - sells;
+      const mul = Math.max(0.5, Math.min(1.5, 1 + diff * 0.02));
+      return { base, mul, buys, sells };
+    });
+  }
+  showNotification(`🛒 ${count}개 구매 → -${total}G`, { duration: 1800 });
+};
+// 상인 NPC 패널
+window.openMarketNPC = function() {
+  const modal = document.createElement('div');
+  modal.className = 'pixel-modal-overlay';
+  modal.style.zIndex = '99998';
+  modal.onmousedown = (e) => { if (e.target === modal) modal.remove(); };
+  const rows = MARKET_ITEMS.map(it => {
+    const price = getMarketPrice(it.id) || it.base;
+    const it2 = ITEMS[it.id]; if (!it2) return '';
+    const owned = ((player && player.inventory) || []).find(s => s && s.id === it.id);
+    const cnt = owned ? owned.count : 0;
+    const trend = (marketPrices[it.id] && marketPrices[it.id].mul) || 1;
+    const trendIcon = trend > 1.05 ? '📈' : (trend < 0.95 ? '📉' : '➖');
+    return `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 6px;border-bottom:1px solid #1c2244;">
+        <div style="font-size:18px;width:24px;">${it2.icon || '📦'}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:8px;color:#fff;">${it2.name}</div>
+          <div style="font-size:7px;color:#8890bb;">보유: ${cnt} · ${trendIcon} ${price}G</div>
+        </div>
+        <button onclick="marketBuy('${it.id}',1);this.closest('.pixel-modal-overlay').remove();openMarketNPC();"
+          style="font-family:'Press Start 2P',monospace;font-size:7px;padding:5px 8px;background:#0a2010;border:1px solid #226622;color:#88ffaa;cursor:pointer;">사기</button>
+        <button onclick="marketSell('${it.id}',1);this.closest('.pixel-modal-overlay').remove();openMarketNPC();"
+          style="font-family:'Press Start 2P',monospace;font-size:7px;padding:5px 8px;background:#201010;border:1px solid #662222;color:#ff8888;cursor:pointer;">팔기</button>
+      </div>`;
+  }).join('');
+  modal.innerHTML = `
+    <div class="pixel-modal" style="width:min(460px,92vw);max-height:80vh;">
+      <div class="panel-header">
+        <span class="panel-title" style="color:#ffd700;">💹 방랑 상인 (동적 시세)</span>
+        <button class="panel-close" onclick="this.closest('.pixel-modal-overlay').remove()">✕</button>
+      </div>
+      <div class="panel-body" style="padding:0 12px 12px;max-height:calc(80vh - 80px);overflow-y:auto;">
+        <div style="padding:8px 4px;font-size:7px;color:#8890bb;text-align:center;line-height:1.7;">
+          📈 = 오르는 중 · 📉 = 떨어지는 중 · ➖ = 안정<br>
+          💰 내 골드: ${player ? player.gold : 0}G
+        </div>
+        ${rows}
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+};
+// PVP 랭킹 조회
+window.showArenaRanking = async function() {
+  if (isOffline || !supabase || !supabase.db) { showNotification('오프라인'); return; }
+  const snap = await supabase.db.ref('arena/ratings').get();
+  const val = snap.val() || {};
+  const list = Object.values(val).sort((a,b) => (b.rating||0)-(a.rating||0)).slice(0,20);
+  const modal = document.createElement('div');
+  modal.className = 'pixel-modal-overlay';
+  modal.style.zIndex = '99998';
+  modal.onmousedown = (e) => { if (e.target === modal) modal.remove(); };
+  const rows = list.map((u, i) => `
+    <div style="display:flex;justify-content:space-between;padding:6px 10px;border-bottom:1px solid #1c2244;">
+      <span style="font-size:8px;color:${i<3?'#ffd700':'#c8d0ff'};">${i+1}. ${u.name}</span>
+      <span style="font-size:8px;color:#ffbb88;">${u.rating || 0}점</span>
+    </div>`).join('');
+  modal.innerHTML = `
+    <div class="pixel-modal" style="width:min(400px,92vw);max-height:75vh;">
+      <div class="panel-header">
+        <span class="panel-title" style="color:#ff88cc;">⚔️ PVP 아레나 랭킹</span>
+        <button class="panel-close" onclick="this.closest('.pixel-modal-overlay').remove()">✕</button>
+      </div>
+      <div class="panel-body" style="padding:6px 0;max-height:calc(75vh - 60px);overflow-y:auto;">
+        ${rows || '<div style="padding:20px;text-align:center;color:#8890bb;font-size:8px;">아직 기록 없음</div>'}
+        <div style="margin-top:12px;padding:0 12px;text-align:center;">
+          <button onclick="joinArenaQueue();this.closest('.pixel-modal-overlay').remove();"
+            style="font-family:'Press Start 2P',monospace;font-size:8px;padding:8px 16px;background:linear-gradient(180deg,#3a0a1a,#1a0510);border:2px solid #ff4488;color:#fff;cursor:pointer;">
+            🎮 매칭 시작
+          </button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+};
+
+// 게임 로드 시 자동 초기화
+setTimeout(() => {
+  try { initWorldBoss(); } catch(e) { console.warn('boss init', e); }
+  try { initMarket(); } catch(e) { console.warn('market init', e); }
+}, 3000);
 
 // 🚀 로켓 컷신 (상승/하강 풀스크린 연출)
 function showRocketCutscene(phase) {
