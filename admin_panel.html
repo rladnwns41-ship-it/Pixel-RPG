@@ -1237,7 +1237,16 @@ window._TOS_TEXT = {
       '<b style="color:#ffd24a;">제8조 (약관 변경)</b><br>' +
       '운영자는 본 약관을 개정할 수 있으며, 개정 시 서비스 내 공지로 갈음합니다.<br><br>' +
 
-      '<b style="color:#ffd24a;">제9조 (신고 및 문의)</b><br>' +
+      '<b style="color:#ffd24a;">제9조 (후원)</b><br>' +
+      '1. 본 서비스는 자발적 후원을 통한 게임 내 재화·아이템 지급 서비스를 운영할 수 있습니다.<br>' +
+      '2. 후원은 운영자가 지정한 방법(계좌이체 등)으로만 진행되며, 후원 기능이 열린 시점부터 유효합니다.<br>' +
+      '3. <b style="color:#ff8888;">미성년자는 반드시 보호자(법정대리인)의 동의를 받은 후 후원하여야 합니다.</b> 보호자 동의 없이 발생한 후원에 대한 책임은 이용자 본인에게 있습니다.<br>' +
+      '4. 지급된 골드·아이템 등 게임 내 재화는 지급 완료 시점부터 <b>환불되지 않습니다.</b><br>' +
+      '5. 입금자명이 게임 닉네임과 다를 경우 지급이 지연되거나 불가할 수 있습니다.<br>' +
+      '6. 게임 내 재화는 현실 금전적 가치를 가지지 않으며, 서비스 종료·시즌 초기화·계정 정지 시 소멸됩니다.<br>' +
+      '7. 운영자는 후원 서비스를 사전 고지 없이 변경하거나 종료할 수 있습니다.<br><br>' +
+
+      '<b style="color:#ffd24a;">제10조 (신고 및 문의)</b><br>' +
       'rladnwns54@gmail.com<br><br>' +
 
       '<div style="color:#8899cc;font-size:10px;margin-top:16px;">시행일: 2026년 7월 11일</div>'
@@ -12218,9 +12227,10 @@ function showShop(tabIdx) {
       <button class="panel-tab${curTab===0?' active':''}" onclick="showShop(0)">🛒 일반</button>
       <button class="panel-tab${curTab===1?' active':''}" onclick="showShop(1)">🪤 함정 (${trapItems.length})</button>
       <button class="panel-tab${curTab===2?' active':''}" onclick="showShop(2)">🐾 펫</button>
+      <button class="panel-tab${curTab===3?' active':''}" onclick="showShop(3)" style="color:#ffd700;">💛 후원</button>
     </div>
     <div class="panel-body">
-      ${curTab === 0 ? renderNormal() : curTab === 1 ? renderTraps() : renderPetTab()}
+      ${curTab === 0 ? renderNormal() : curTab === 1 ? renderTraps() : curTab === 2 ? renderPetTab() : renderDonateTab()}
     </div>`;
 
   // 펫 탭 캔버스에 스프라이트 그리기
@@ -12268,6 +12278,76 @@ function showShop(tabIdx) {
       }
     });
   }
+}
+
+// ============================================================
+// 💛 후원 탭
+// ============================================================
+function renderDonateTab() {
+  return `
+    <div style="padding:6px 4px;text-align:center;">
+
+      <!-- 준비 중 배너 -->
+      <div style="background:linear-gradient(135deg,rgba(255,180,0,0.08),rgba(255,100,0,0.06));
+        border:2px solid rgba(255,180,0,0.35);border-radius:4px;padding:18px 14px;margin-bottom:16px;">
+        <div style="font-size:22px;margin-bottom:8px;">🚧</div>
+        <div style="font-size:11px;color:#ffd700;letter-spacing:1px;margin-bottom:6px;">후원 기능 준비 중</div>
+        <div style="font-size:8px;color:#8890bb;line-height:1.8;">
+          현재 후원 기능은 열려 있지 않습니다.<br>
+          오픈 시 공지 예정이에요!
+        </div>
+      </div>
+
+      <!-- 후원 안내 -->
+      <div style="background:rgba(10,12,30,0.7);border:1px solid #1c2244;border-radius:4px;padding:14px;margin-bottom:12px;text-align:left;">
+        <div style="font-size:8px;color:#ffd24a;margin-bottom:10px;letter-spacing:1px;">📋 후원 방법 (오픈 후)</div>
+        <div style="font-size:8px;color:#c8d0ff;line-height:2.1;">
+          1. 아래 카카오뱅크 계좌로 금액 송금<br>
+          2. 입금자명을 <span style="color:#ffd700;">게임 닉네임</span>으로 설정<br>
+          3. 이메일로 닉네임·금액 알려주기<br>
+          4. 확인 후 골드·아이템 직접 지급
+        </div>
+      </div>
+
+      <!-- 후원 상품 (준비 중이라 흐리게) -->
+      <div style="font-size:8px;color:#5a628f;margin-bottom:8px;letter-spacing:1px;">— 후원 상품 (예정) —</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;opacity:0.4;pointer-events:none;">
+        ${[
+          { emoji:'💰', name:'골드 1,000G',   price:'1,000원' },
+          { emoji:'💎', name:'골드 6,000G',   price:'5,000원' },
+          { emoji:'⚔️', name:'레어 무기 상자', price:'3,000원' },
+          { emoji:'🥚', name:'레어 펫 알',    price:'5,000원' },
+        ].map(it => `
+          <div style="background:#0a0c1e;border:1px solid #1c2244;border-radius:4px;padding:10px 8px;text-align:center;">
+            <div style="font-size:20px;margin-bottom:4px;">${it.emoji}</div>
+            <div style="font-size:7px;color:#c8d0ff;margin-bottom:4px;">${it.name}</div>
+            <div style="font-size:8px;color:#ffd700;">${it.price}</div>
+          </div>`).join('')}
+      </div>
+
+      <!-- 계좌 (흐리게) -->
+      <div style="background:rgba(10,12,30,0.7);border:1px solid #1c2244;border-radius:4px;padding:12px;margin-bottom:12px;opacity:0.4;">
+        <div style="font-size:8px;color:#ffd24a;margin-bottom:8px;">🏦 카카오뱅크</div>
+        <div style="font-size:9px;color:#c8d0ff;letter-spacing:2px;margin-bottom:4px;">준비 중</div>
+        <div style="font-size:7px;color:#5a628f;">예금주: 오픈 후 공개</div>
+      </div>
+
+      <!-- 문의 -->
+      <div style="font-size:7px;color:#5a628f;line-height:1.8;margin-bottom:10px;">
+        문의: rladnwns54@gmail.com
+      </div>
+
+      <!-- 주의사항 -->
+      <div style="background:rgba(255,60,60,0.06);border:1px solid rgba(255,60,60,0.2);border-radius:4px;padding:10px;text-align:left;">
+        <div style="font-size:7px;color:#ff8888;line-height:1.9;">
+          ⚠️ 미성년자는 반드시 보호자 동의 후 이용<br>
+          ⚠️ 지급된 골드·아이템은 환불 불가<br>
+          ⚠️ 입금자명 다르면 지급 불가<br>
+          ⚠️ 게임 내 재화는 현금 가치 없음
+        </div>
+      </div>
+
+    </div>`;
 }
 
 // 펫 뽑기 실행 (상점에서 500G 소비)
