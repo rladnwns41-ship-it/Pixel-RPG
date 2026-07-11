@@ -2429,7 +2429,7 @@ window.showBanScreen = showBanScreen;
       try {
         const r = await NET.call('login', { user_id, password });
         if (r && r.banned) { showBanScreen(r.reason, r.email); return { error: '정지된 계정입니다' }; }
-        if (r && r.ok) { NET.token = r.token; try { NET.call('join', { room: 'official' }); } catch (e) {} return { user: r.user }; }
+        if (r && r.ok) { NET.token = r.token; window._isAdmin = !!r.is_admin; try { NET.call('join', { room: 'official' }); } catch (e) {} return { user: r.user }; }
         if (r && r.error) return { error: r.error };
         return await _fbLogin(user_id, password);
       } catch (e) { return await _fbLogin(user_id, password); }   // 서버 응답없음 → Firebase
@@ -2484,6 +2484,7 @@ window.showBanScreen = showBanScreen;
       if (!NET.ready || !NET.token || document.getElementById('banOverlay')) return;
       try {
         const r = await NET.call('load', {});
+        if (r && typeof r.is_admin === 'boolean') window._isAdmin = r.is_admin;
         if (r && r.error === 'no_user') showBanScreen('계정이 삭제되었습니다', 'rladnwns54@gmail.com');
         else if (r && r.user && r.user.banned) showBanScreen(r.user.ban_reason || '이상 행동 감지', 'rladnwns54@gmail.com');
       } catch (e) {}
@@ -12850,6 +12851,13 @@ function showSettings() {
       ${row('상대 이름 표시', tglBtn('setEnemyName', g.showEnemyName, 'toggleSetting(\'showEnemyName\')'))}
       ${row('조준선 표시', tglBtn('setAim', g.showAim, 'toggleSetting(\'showAim\')'))}
       <div style="font-size:7px;color:#5a628f;text-align:center;margin-top:8px;line-height:1.6;">전투 보조 기능은 필요한 것만 켜세요.<br>화면이 복잡해지면 끌 수 있습니다.</div>
+      ${isAdmin() ? `
+        <div style="font-size:8px;color:#FF4466;margin:14px 0 6px;letter-spacing:1px;">— 🛡️ 관리자 전용 —</div>
+        <div style="display:flex;flex-direction:column;gap:6px;padding:6px 4px;">
+          <button onclick="closePanel();showAdminPanel();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#3a1020,#1a0510);border-top:2px solid #7a2040;border-left:2px solid #7a2040;border-bottom:2px solid #200008;border-right:2px solid #200008;color:#ff88aa;cursor:pointer;letter-spacing:1px;">🛡️ 관리자 패널 열기</button>
+          <div style="font-size:6.5px;color:#5a628f;text-align:center;line-height:1.6;">유저 관리·신고 확인·아이템 지급<br>단축키: [ \\ ] (백슬래시)</div>
+        </div>
+      ` : ''}
     </div>`;
 }
 
@@ -17941,10 +17949,10 @@ function kickTeamMember(memberName) {
 // ============================================================
 // ── 관리자 패널 (개발자 전용) ──
 // ============================================================
-const ADMIN_IDS = ['dig', 'dig 개발자']; // 관리자 계정 목록
-
+const ADMIN_IDS = []; // ⛔ 하드코딩 안 함 — Render 환경변수 ADMIN_IDS 로만 관리
 function isAdmin() {
-  return ADMIN_IDS.includes(currentUserId) || ADMIN_IDS.includes(player?.name);
+  // 서버(s.js)가 로그인/로드 응답에 넣어준 is_admin 플래그가 진실
+  return window._isAdmin === true;
 }
 
 async function showAdminPanel() {
