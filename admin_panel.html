@@ -14984,18 +14984,19 @@ function tryEnterOcean() {
 }
 
 // 심해 월드: 위쪽은 밝은 파랑, 아래로 갈수록 자원 많음
+// world 배열은 [x][y] 순서!
 function generateOceanWorld() {
   const w = [];
-  for (let y = 0; y < WORLD_H; y++) {
-    w[y] = [];
-    for (let x = 0; x < WORLD_W; x++) {
+  for (let x = 0; x < WORLD_W; x++) {
+    w[x] = [];
+    for (let y = 0; y < WORLD_H; y++) {
       // 자원 밀도가 아래로 갈수록 증가
       const depthFactor = y / WORLD_H;
       const r = Math.random();
-      if (r < 0.003 + depthFactor * 0.008) w[y][x] = { type: 'ocean_pearl' };
-      else if (r < 0.006 + depthFactor * 0.012) w[y][x] = { type: 'ocean_ore' };
-      else if (r < 0.014 + depthFactor * 0.010) w[y][x] = { type: 'ocean_coral' };
-      else w[y][x] = null;
+      if (r < 0.003 + depthFactor * 0.008) w[x][y] = { type: 'ocean_pearl' };
+      else if (r < 0.006 + depthFactor * 0.012) w[x][y] = { type: 'ocean_ore' };
+      else if (r < 0.014 + depthFactor * 0.010) w[x][y] = { type: 'ocean_coral' };
+      else w[x][y] = null;
     }
   }
   return w;
@@ -15069,9 +15070,9 @@ function tryHarvestOcean() {
   const ty = Math.floor(player.y / TILE);
   for (let dy = -1; dy <= 1; dy++) {
     for (let dx = -1; dx <= 1; dx++) {
-      const cy = ty + dy, cx = tx + dx;
+      const cx = tx + dx, cy = ty + dy;
       if (cy < 0 || cy >= WORLD_H || cx < 0 || cx >= WORLD_W) continue;
-      const cell = world[cy] && world[cy][cx];
+      const cell = world[cx] && world[cx][cy];
       if (!cell) continue;
       let itemId = null;
       if (cell.type === 'ocean_pearl') itemId = 'deep_pearl';
@@ -15079,7 +15080,7 @@ function tryHarvestOcean() {
       else if (cell.type === 'ocean_coral') itemId = 'coral';
       if (itemId) {
         if (typeof addToInventory === 'function') addToInventory(player, itemId, 1);
-        world[cy][cx] = null;
+        world[cx][cy] = null;
         _tileLayerDirty = true;
         showNotification('🫧 ' + (ITEMS[itemId]?.name || itemId) + ' 획득!', { duration: 1200 });
         return true;
@@ -15120,14 +15121,14 @@ function checkOceanEntryPrompt() {
     if (_oceanEnterHintEl) { _oceanEnterHintEl.remove(); _oceanEnterHintEl = null; }
     return;
   }
-  // 플레이어 주변 3칸 안에 물 있는지
-  const px = Math.floor(player.x / TILE), py = Math.floor(player.y / TILE);
+  // 플레이어 주변에 물 있는지 (world는 [x][y] 순서 주의!)
+  const px = Math.floor((player.x + player.w/2) / TILE), py = Math.floor((player.y + player.h/2) / TILE);
   let hasWater = false;
-  for (let dy = -2; dy <= 3; dy++) {
-    for (let dx = -2; dx <= 2; dx++) {
+  for (let dy = -3; dy <= 4; dy++) {
+    for (let dx = -3; dx <= 3; dx++) {
       const cy = py + dy, cx = px + dx;
       if (cy < 0 || cy >= WORLD_H || cx < 0 || cx >= WORLD_W) continue;
-      if (world[cy] && world[cy][cx] === TILES.WATER) { hasWater = true; break; }
+      if (world[cx] && world[cx][cy] === TILES.WATER) { hasWater = true; break; }
     }
     if (hasWater) break;
   }
@@ -15314,16 +15315,15 @@ function drawOcean() {
 // ─── 심해 자원 스파스 렌더 (renderTileLayer 대체) ───
 function drawOceanResources() {
   if (!oceanMode || !ctx || !world || !canvas) return;
-  // 화면에 보이는 범위만 스캔 (매우 빠름)
   const startX = Math.max(0, Math.floor(camera.x / TILE) - 1);
   const endX = Math.min(WORLD_W, Math.ceil((camera.x + canvas.width) / TILE) + 1);
   const startY = Math.max(0, Math.floor(camera.y / TILE) - 1);
   const endY = Math.min(WORLD_H, Math.ceil((camera.y + canvas.height) / TILE) + 1);
 
-  for (let y = startY; y < endY; y++) {
-    if (!world[y]) continue;
-    for (let x = startX; x < endX; x++) {
-      const cell = world[y][x];
+  for (let x = startX; x < endX; x++) {
+    if (!world[x]) continue;
+    for (let y = startY; y < endY; y++) {
+      const cell = world[x][y];
       if (!cell || !cell.type) continue;
       const sx = x * TILE - camera.x;
       const sy = y * TILE - camera.y;
