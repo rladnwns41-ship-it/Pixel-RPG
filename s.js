@@ -155,7 +155,7 @@ async function handleLogin(m) {
   await setUser(u.user_id, { sessions: (u.sessions || 0) + 1, last_login: new Date().toISOString() });
   const token = makeToken(u.user_id);
   const { pw_hash, ...safe } = u;     // 비번 해시는 절대 클라로 안 보냄
-  return { ok: true, token, user: safe };
+  return { ok: true, token, user: safe, is_admin: ADMIN_IDS.has(u.user_id) };
 }
 
 // ============================================================
@@ -553,7 +553,7 @@ wss.on('connection', (ws) => {
         case 'register': return reply(await handleRegister(m));
         case 'login': { const r = await handleLogin(m); if (r.ok) sess.user_id = r.user.user_id; return reply(r); }
         case 'save': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); if (!rateOk(u, 'save', 10, 5000)) return reply({ error: 'rate' }); return reply(await handleSave(u, m.data || {})); }
-        case 'load': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); const usr = await getUser(u); if (!usr) return reply({ error: 'no_user' }); const { pw_hash, ...safe } = usr; return reply({ ok: true, user: safe }); }
+        case 'load': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); const usr = await getUser(u); if (!usr) return reply({ error: 'no_user' }); const { pw_hash, ...safe } = usr; return reply({ ok: true, user: safe, is_admin: ADMIN_IDS.has(u) }); }
         case 'kill': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actKill(u, safeStr(m.mob, 32), !!m.boss)); }
         case 'sell': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actSell(u, m.id, m.count)); }
         case 'buy': { const u = auth(); if (!u) return reply({ error: 'unauthorized' }); return reply(await actBuy(u, m.id, m.count)); }
