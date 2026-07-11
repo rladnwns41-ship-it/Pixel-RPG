@@ -9377,11 +9377,14 @@ function updatePlayer() {
   if (player.vy === 0 && !player.onGround) player.vy = 0.1;
 
   if (!chatOpen) {
-    if (keys['KeyA'] || keys['ArrowLeft']) { player.vx = -MOVE_SPEED; player.dir = -1; player.walkFrame++; }
-    else if (keys['KeyD'] || keys['ArrowRight']) { player.vx = MOVE_SPEED; player.dir = 1; player.walkFrame++; }
+    if (keys['KeyA'] || keys['ArrowLeft']) { player.vx = -MOVE_SPEED; player.dir = -1; player.walkFrame++;
+      if (typeof _recordBotAction === 'function') _recordBotAction('move_left'); }
+    else if (keys['KeyD'] || keys['ArrowRight']) { player.vx = MOVE_SPEED; player.dir = 1; player.walkFrame++;
+      if (typeof _recordBotAction === 'function') _recordBotAction('move_right'); }
     else { player.vx = 0; }
     if ((keys['KeyW'] || keys['ArrowUp'] || keys['Space']) && player.onGround) {
       player.vy = spaceMode ? JUMP_FORCE * 0.7 : JUMP_FORCE; player.onGround = false;
+      if (typeof _recordBotAction === 'function') _recordBotAction('jump');
     }
   }
   const speedBuff = player.buffs.find(b => b.type === 'speed');
@@ -10884,6 +10887,7 @@ function spawnMushroomCloud(x, y) {
 
 function attack(forceAttack) {
   if (!player) return;
+  if (typeof _recordBotAction === 'function') _recordBotAction('attack');
   if (fishingState.active && fishingState.hasBite) { catchFish(); return; }
   if (fishingState.active) return;
   if (!forceAttack && player.attackTimer > 0) return;
@@ -13202,6 +13206,7 @@ function showSettings() {
         <div style="font-size:8px;color:#FF4466;margin:14px 0 6px;letter-spacing:1px;">— 🛡️ 관리자 전용 —</div>
         <div style="display:flex;flex-direction:column;gap:6px;padding:6px 4px;">
           <button onclick="closePanel();showAdminPanel();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#3a1020,#1a0510);border-top:2px solid #7a2040;border-left:2px solid #7a2040;border-bottom:2px solid #200008;border-right:2px solid #200008;color:#ff88aa;cursor:pointer;letter-spacing:1px;">🛡️ 관리자 패널 열기</button>
+          <button onclick="closePanel();openBotAdminPanel();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#0a2a3a,#051520);border-top:2px solid #4488aa;border-left:2px solid #4488aa;border-bottom:2px solid #051520;border-right:2px solid #051520;color:#88ccee;cursor:pointer;letter-spacing:1px;">🤖 봇 관리자 패널</button>
           <div style="font-size:6.5px;color:#5a628f;text-align:center;line-height:1.6;">유저 관리·신고 확인·아이템 지급<br>단축키: [ \\ ] (백슬래시)</div>
         </div>
       ` : ''}
@@ -16060,6 +16065,370 @@ function updateBossDirectionArrow(bossX, bossY) {
     </div>
   `;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🤖 학습형 봇 시스템 — Supabase 로깅 + TensorFlow.js 학습 + 봇 실행
+// ═══════════════════════════════════════════════════════════════════════════
+const BOT_SERVER_URL = 'https://bot-oi7z.onrender.com';
+let _botLoggingEnabled = false;
+let _botLastAction = 'idle';
+let _botLastActionTs = 0;
+let _botLogInterval = null;
+let bots = [];              // 로컬 봇들 { id, name, x, y, vx, vy, hp, maxHp, dir, target, lastPredictTs }
+let _botPredictInterval = null;
+
+// ─── 유저 액션 감지 (이벤트 훅으로 마지막 액션 기록) ───
+function _recordBotAction(action, target) {
+  _botLastAction = action;
+  _botLastActionTs = Date.now();
+  window._botLastActionTarget = target || null;
+}
+window._recordBotAction = _recordBotAction;
+
+// ─── 현재 상태 스냅샷 ───
+function _getBotState(p) {
+  p = p || player;
+  if (!p) return null;
+  // 주변 몹 카운트
+  let nearMobs = 0;
+  for (const a of (animals || [])) {
+    if (a.dead) continue;
+    if (Math.hypot(a.x - p.x, a.y - p.y) < TILE * 6) nearMobs++;
+  }
+  // 주변 플레이어
+  let nearPlayers = 0;
+  for (const k in (otherPlayers || {})) {
+    const op = otherPlayers[k]; if (!op) continue;
+    if (Math.hypot(op.x - p.x, op.y - p.y) < TILE * 6) nearPlayers++;
+  }
+  const hotItem = p.hotbar ? p.hotbar[selectedHotbar || 0] : null;
+  const hasWeapon = hotItem && ITEMS[hotItem] && ITEMS[hotItem].type === 'weapon';
+  return {
+    hp: p.hp | 0, max_hp: p.maxHp | 0,
+    mp: p.mp | 0, gold: p.gold | 0, level: p.level | 0,
+    x: p.x, y: p.y, dir: p.dir | 0,
+    nearby_mobs: nearMobs,
+    nearby_players: nearPlayers,
+    time_of_day: Math.floor((gameTime || 0) / 1000) % 24,
+    in_ocean: !!oceanMode,
+    in_space: !!spaceMode,
+    has_weapon: !!hasWeapon,
+    hunger: p.hunger | 100,
+  };
+}
+
+// ─── 로깅 시작/중지 ───
+window.startBotLogging = function() {
+  if (_botLoggingEnabled) return;
+  _botLoggingEnabled = true;
+  showNotification('📝 봇 로깅 시작 (1초 간격)', { duration: 2000 });
+  _botLogInterval = setInterval(async () => {
+    if (!_botLoggingEnabled || !player) return;
+    const state = _getBotState();
+    if (!state) return;
+    // 최근 3초 이내 액션 있으면 그거, 아니면 idle
+    const action = (Date.now() - _botLastActionTs < 3000) ? _botLastAction : 'idle';
+    try {
+      fetch(BOT_SERVER_URL + '/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: player.name || 'unknown',
+          state, action,
+          action_target: window._botLastActionTarget,
+        }),
+      }).catch(() => {}); // 실패해도 무시
+    } catch(e) {}
+  }, 1000);
+};
+window.stopBotLogging = function() {
+  _botLoggingEnabled = false;
+  if (_botLogInterval) { clearInterval(_botLogInterval); _botLogInterval = null; }
+  showNotification('📝 로깅 중지', { duration: 1500 });
+};
+
+// ─── 봇 스폰 ───
+window.spawnLearningBot = function(count) {
+  count = Math.max(1, Math.min(5, count || 1));
+  for (let i = 0; i < count; i++) {
+    const bx = (player ? player.x : WORLD_W * TILE / 2) + (Math.random() - 0.5) * 200;
+    const by = (player ? player.y : 200) - 50;
+    bots.push({
+      id: 'bot_' + Date.now() + '_' + i,
+      name: '봇' + Math.floor(Math.random() * 999),
+      x: bx, y: by, vx: 0, vy: 0,
+      w: 24, h: 32, hp: 100, maxHp: 100, dir: 1,
+      lastPredictTs: 0, currentAction: 'idle',
+      actionTimer: 0,
+    });
+  }
+  showNotification('🤖 봇 ' + count + '마리 스폰됨', { duration: 2000 });
+  if (!_botPredictInterval) startBotAI();
+};
+
+// ─── 봇 AI 루프 (2초마다 예측 API 호출) ───
+function startBotAI() {
+  _botPredictInterval = setInterval(async () => {
+    if (bots.length === 0) return;
+    for (const b of bots) {
+      if (b.hp <= 0) continue;
+      // 예측 API 호출
+      try {
+        const state = _getBotState(b);
+        const r = await fetch(BOT_SERVER_URL + '/predict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ state }),
+        });
+        const j = await r.json();
+        if (j && j.action) {
+          b.currentAction = j.action;
+          b.actionTimer = 40;  // 40프레임 동안 이 액션 유지
+        }
+      } catch(e) { b.currentAction = 'idle'; }
+    }
+  }, 2000);
+}
+
+// ─── 봇 물리 업데이트 (매 프레임) ───
+function updateBots() {
+  if (bots.length === 0) return;
+  const g = 0.6;
+  for (const b of bots) {
+    if (b.hp <= 0) continue;
+    if (b.actionTimer > 0) b.actionTimer--;
+    // 액션 실행
+    const speed = 1.6;
+    switch (b.currentAction) {
+      case 'move_left':
+      case 'flee_left':
+        b.vx = -speed; b.dir = -1; break;
+      case 'move_right':
+      case 'flee_right':
+        b.vx = speed; b.dir = 1; break;
+      case 'jump':
+        if (Math.abs(b.vy) < 0.5) b.vy = -8;
+        break;
+      case 'attack':
+      case 'mine':
+        // 근처 몹 있으면 공격 (단순화)
+        for (const a of (animals || [])) {
+          if (a.dead) continue;
+          if (Math.hypot(a.x - b.x, a.y - b.y) < TILE * 2) {
+            a.currentHp -= 5; a.hit = true; a.hitTimer = 10;
+            if (a.currentHp <= 0 && typeof killAnimal === 'function') killAnimal(a);
+            break;
+          }
+        }
+        b.vx *= 0.7;
+        break;
+      case 'idle':
+      default:
+        b.vx *= 0.7; break;
+    }
+    // 중력
+    b.vy = Math.min(10, b.vy + g);
+    // 이동
+    let nx = b.x + b.vx;
+    let ny = b.y + b.vy;
+    // 지면 체크
+    const bx = Math.floor((b.x + b.w/2) / TILE);
+    const bfy = Math.floor((ny + b.h) / TILE);
+    if (bfy >= 0 && bfy < WORLD_H && bx >= 0 && bx < WORLD_W) {
+      const t = world[bx] && world[bx][bfy];
+      if (t !== undefined && t !== TILES.AIR && t !== TILES.WATER && typeof t === 'number' && t > 0) {
+        ny = bfy * TILE - b.h; b.vy = 0;
+      }
+    }
+    // 벽
+    const fx = Math.floor((nx + (b.dir > 0 ? b.w : 0)) / TILE);
+    const fy = Math.floor((b.y + b.h/2) / TILE);
+    if (fy >= 0 && fy < WORLD_H && fx >= 0 && fx < WORLD_W) {
+      const t = world[fx] && world[fx][fy];
+      if (t !== undefined && t !== TILES.AIR && t !== TILES.WATER && typeof t === 'number' && t > 0) {
+        nx = b.x;
+        b.currentAction = b.currentAction === 'move_left' ? 'move_right' : 'move_left';
+      }
+    }
+    b.x = nx; b.y = ny;
+    // 월드 경계
+    if (b.x < 0) b.x = 0;
+    if (b.x > WORLD_W * TILE - b.w) b.x = WORLD_W * TILE - b.w;
+  }
+}
+
+// ─── 봇 렌더 (파란색 픽셀 캐릭터) ───
+function drawBots() {
+  if (bots.length === 0 || !ctx) return;
+  for (const b of bots) {
+    if (b.hp <= 0) continue;
+    const sx = b.x - camera.x, sy = b.y - camera.y;
+    if (sx < -50 || sx > canvas.width + 50) continue;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    // 그림자
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath(); ctx.ellipse(sx + 12, sy + 33, 10, 3, 0, 0, Math.PI*2); ctx.fill();
+    const px = 3;
+    function pix(dx, dy, w, h, col) { ctx.fillStyle = col; ctx.fillRect(sx + dx*px, sy + dy*px, w*px, h*px); }
+    // 몸(파란 로봇)
+    pix(2, 4, 4, 5, '#3a5a8a');
+    pix(1, 5, 1, 3, '#3a5a8a');
+    pix(6, 5, 1, 3, '#3a5a8a');
+    // 안테나
+    pix(3, 0, 2, 2, '#4a6a9a');
+    pix(3, 0, 1, 1, '#ff4466');   // 빨간 LED
+    // 머리
+    pix(2, 2, 4, 3, '#5a7aaa');
+    // 눈 (초록)
+    pix(3, 3, 1, 1, '#66ff88');
+    pix(4, 3, 1, 1, '#66ff88');
+    // 다리
+    pix(3, 9, 1, 2, '#2a4a7a');
+    pix(4, 9, 1, 2, '#2a4a7a');
+    // 이름 태그
+    ctx.font = 'bold 8px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#000'; ctx.fillText('🤖 ' + b.name, sx + 12 + 1, sy - 8 + 1);
+    ctx.fillStyle = '#88ccff'; ctx.fillText('🤖 ' + b.name, sx + 12, sy - 8);
+    ctx.restore();
+  }
+}
+
+// ─── 봇 관리자 패널 ───
+window.openBotAdminPanel = async function() {
+  if (!isAdmin()) { showNotification('❌ 관리자 전용'); return; }
+  const overlay = document.createElement('div');
+  overlay.className = 'pixel-modal-overlay';
+  overlay.onmousedown = (e) => { if (e.target === overlay) overlay.remove(); };
+  // 서버 상태 조회
+  let health = { modelLoaded: false };
+  let stats = { total: 0, actionDist: {} };
+  let trainStatus = { isTraining: false };
+  try {
+    health = await fetch(BOT_SERVER_URL + '/').then(r => r.json());
+    stats = await fetch(BOT_SERVER_URL + '/stats').then(r => r.json());
+    trainStatus = await fetch(BOT_SERVER_URL + '/train/status').then(r => r.json());
+  } catch(e) {}
+  const distStr = Object.entries(stats.actionDist || {})
+    .sort((a,b)=>b[1]-a[1])
+    .map(([a,c]) => `<span style="color:#aab4d0;">${a}</span>=<span style="color:#ffdd66;">${c}</span>`)
+    .join(' · ') || '<span style="color:#5a628f;">데이터 없음</span>';
+
+  overlay.innerHTML = `
+    <div class="pixel-modal" style="width: min(560px, 92vw); max-height: 90vh; display:flex; flex-direction:column;">
+      <div class="panel-header">
+        <span class="panel-title">🤖 봇 관리자 패널</span>
+        <button class="panel-close" onclick="this.closest('.pixel-modal-overlay').remove()">✕</button>
+      </div>
+      <div class="panel-body" style="padding: 14px; overflow-y: auto; font-family:'Press Start 2P',monospace;">
+
+        <!-- 서버 상태 -->
+        <div style="margin-bottom:16px; padding:10px; background:rgba(10,14,30,0.6); border:1px solid #1c2244;">
+          <div style="font-size:8px; color:#ffd24a; margin-bottom:6px;">📡 서버 상태</div>
+          <div style="font-size:7px; line-height:1.9; color:#c8d0ff;">
+            연결: <span style="color:${health.ok?'#66ff88':'#ff6666'};">${health.ok?'✅ 정상':'❌ 오프라인'}</span><br>
+            모델: <span style="color:${health.modelLoaded?'#66ff88':'#ffaa66'};">${health.modelLoaded?'✅ 로드됨':'⚠️ 학습 필요'}</span><br>
+            수집된 데이터: <span style="color:#ffdd66;">${(stats.total||0).toLocaleString()}</span>개
+          </div>
+        </div>
+
+        <!-- 로깅 컨트롤 -->
+        <div style="margin-bottom:16px; padding:10px; background:rgba(10,14,30,0.6); border:1px solid #1c2244;">
+          <div style="font-size:8px; color:#ffd24a; margin-bottom:8px;">📝 데이터 수집</div>
+          <div style="display:flex; gap:6px;">
+            <button onclick="startBotLogging(); this.closest('.pixel-modal-overlay').remove(); openBotAdminPanel();"
+              style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
+              background:${_botLoggingEnabled?'#0a2a10':'#0a2010'};
+              border-top:2px solid #3a6a3a; border-left:2px solid #3a6a3a;
+              border-bottom:2px solid #041004; border-right:2px solid #041004;
+              color:#88ff88;">▶ 로깅 시작${_botLoggingEnabled?' ✅':''}</button>
+            <button onclick="stopBotLogging(); this.closest('.pixel-modal-overlay').remove(); openBotAdminPanel();"
+              style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
+              background:#200a10;
+              border-top:2px solid #6a3a3a; border-left:2px solid #6a3a3a;
+              border-bottom:2px solid #100404; border-right:2px solid #100404;
+              color:#ff8888;">⏹ 로깅 중지</button>
+          </div>
+          <div style="font-size:6.5px; color:#8890bb; margin-top:6px; line-height:1.7;">
+            현재: ${_botLoggingEnabled?'🟢 수집 중':'🔴 중지됨'} · 1초에 1건<br>
+            액션 분포: ${distStr}
+          </div>
+        </div>
+
+        <!-- 학습 -->
+        <div style="margin-bottom:16px; padding:10px; background:rgba(10,14,30,0.6); border:1px solid #1c2244;">
+          <div style="font-size:8px; color:#ffd24a; margin-bottom:8px;">🎓 모델 학습</div>
+          ${trainStatus.isTraining ? `
+            <div style="font-size:7px; color:#ffaa66; line-height:1.8;">
+              🔄 학습 중...<br>
+              epoch: ${trainStatus.progress?.epoch || 0}<br>
+              loss: ${trainStatus.progress?.loss?.toFixed(4) || '?'}<br>
+              acc: ${trainStatus.progress?.acc ? (trainStatus.progress.acc*100).toFixed(1)+'%' : '?'}
+            </div>
+            <button onclick="this.closest('.pixel-modal-overlay').remove(); openBotAdminPanel();"
+              style="width:100%; margin-top:6px; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
+              background:#1a1a2a; border:2px solid #445; color:#aab;">🔄 새로고침</button>
+          ` : `
+            <button onclick="startBotTraining()"
+              style="width:100%; font-family:inherit; font-size:8px; padding:10px; cursor:pointer;
+              background:linear-gradient(180deg,#2a1a05,#150a02);
+              border-top:2px solid #886633; border-left:2px solid #886633;
+              border-bottom:2px solid #221108; border-right:2px solid #221108;
+              color:#ffcc88;">🎓 학습 시작 (${stats.total||0}개 데이터, 10 epoch)</button>
+            <div style="font-size:6.5px; color:#8890bb; margin-top:6px; line-height:1.7;">
+              최소 20개 데이터 필요. 학습에 30초~2분 소요.<br>
+              학습 후 자동으로 모델 저장됨.
+            </div>
+          `}
+        </div>
+
+        <!-- 봇 스폰 -->
+        <div style="margin-bottom:16px; padding:10px; background:rgba(10,14,30,0.6); border:1px solid #1c2244;">
+          <div style="font-size:8px; color:#ffd24a; margin-bottom:8px;">🎮 봇 관리</div>
+          <div style="font-size:7px; color:#c8d0ff; margin-bottom:6px;">현재 봇: ${bots.filter(b=>b.hp>0).length}마리</div>
+          <div style="display:flex; gap:6px;">
+            <button onclick="spawnLearningBot(1); this.closest('.pixel-modal-overlay').remove(); openBotAdminPanel();"
+              style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
+              background:#0a1a3a; border-top:2px solid #4488cc; border-left:2px solid #4488cc;
+              border-bottom:2px solid #051022; border-right:2px solid #051022;
+              color:#88ccff;">+1 봇</button>
+            <button onclick="spawnLearningBot(3); this.closest('.pixel-modal-overlay').remove(); openBotAdminPanel();"
+              style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
+              background:#0a1a3a; border-top:2px solid #4488cc; border-left:2px solid #4488cc;
+              border-bottom:2px solid #051022; border-right:2px solid #051022;
+              color:#88ccff;">+3 봇</button>
+            <button onclick="bots = []; this.closest('.pixel-modal-overlay').remove(); openBotAdminPanel();"
+              style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
+              background:#200a10; border:2px solid #663; color:#ffaaaa;">💀 전체 제거</button>
+          </div>
+        </div>
+
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+};
+
+window.startBotTraining = async function() {
+  const token = prompt('BOT_SERVER_TOKEN 입력 (Render 환경변수):');
+  if (!token) return;
+  try {
+    const r = await fetch(BOT_SERVER_URL + '/train', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, epochs: 10, limit: 10000 }),
+    });
+    const j = await r.json();
+    if (j.error === 'unauthorized') { showNotification('❌ 토큰 틀림'); return; }
+    if (j.started) {
+      showNotification('🎓 학습 시작! 30초 후 확인', { duration: 3000 });
+      document.querySelectorAll('.pixel-modal-overlay').forEach(el => {
+        if (el.querySelector('.panel-title')?.textContent?.includes('봇 관리자')) el.remove();
+      });
+      setTimeout(() => window.openBotAdminPanel(), 1000);
+    }
+  } catch(e) { showNotification('❌ 통신 실패: ' + e.message); }
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ⚔️ PVP 아레나 (술래잡기) — 별도 임시 서버, 술래는 도망자 처치 / 도망자는 60초 생존
@@ -22098,6 +22467,7 @@ function gameLoop(timestamp) {
   if (typeof updateTraders === 'function') updateTraders();
   if (typeof updateOcean === 'function') updateOcean();
   if (typeof checkOceanEntryPrompt === 'function') checkOceanEntryPrompt();
+  if (typeof updateBots === 'function') updateBots();
   // 저사양 모드: 물/낮밤 갱신을 격프레임으로 (시각 차이 거의 없음, CPU 절약)
   if (!_perfLow || frameCount % 2 === 0) { updateDayNight(); updateWater(); }
   updateWeather();
@@ -22225,6 +22595,8 @@ function gameLoop(timestamp) {
   updateGhostMode();
   drawPlayer(player);
   drawPlayerPet();
+  // 🤖 학습형 봇
+  if (typeof drawBots === 'function') drawBots();
   // 🐠 심해 생물 (플레이어 위)
   if (typeof drawOceanCreatures === 'function') drawOceanCreatures();
   // 🧙 방랑 상인 NPC
