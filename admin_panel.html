@@ -16200,6 +16200,7 @@ window.stopBotLogging = function() {
 // ─── 봇 스폰 ───
 window.spawnLearningBot = function(count) {
   count = Math.max(1, Math.min(5, count || 1));
+  const initialActions = ['move_left', 'move_right', 'jump', 'idle'];
   for (let i = 0; i < count; i++) {
     const bx = (player ? player.x : WORLD_W * TILE / 2) + (Math.random() - 0.5) * 200;
     const by = (player ? player.y : 200) - 50;
@@ -16208,15 +16209,17 @@ window.spawnLearningBot = function(count) {
       name: '봇' + Math.floor(Math.random() * 999),
       x: bx, y: by, vx: 0, vy: 0,
       w: 24, h: 32, hp: 100, maxHp: 100, dir: 1,
-      lastPredictTs: 0, currentAction: 'idle',
-      actionTimer: 0,
+      lastPredictTs: 0,
+      currentAction: initialActions[Math.floor(Math.random() * initialActions.length)],
+      actionTimer: 120,  // 초기 액션 실행 (2초)
+      onGround: false,
     });
   }
   showNotification('🤖 봇 ' + count + '마리 스폰됨', { duration: 2000 });
   if (!_botPredictInterval) startBotAI();
 };
 
-// ─── 봇 AI 루프 (2초마다 예측 API 호출) ───
+// ─── 봇 AI 루프 (1.5초마다 예측 API 호출) ───
 function startBotAI() {
   _botPredictInterval = setInterval(async () => {
     if (bots.length === 0) return;
@@ -16233,22 +16236,31 @@ function startBotAI() {
         const j = await r.json();
         if (j && j.action) {
           b.currentAction = j.action;
-          b.actionTimer = 40;  // 40프레임 동안 이 액션 유지
+          b.actionTimer = 90;
         }
-      } catch(e) { b.currentAction = 'idle'; }
+      } catch(e) {
+        // 통신 실패 → 랜덤 액션 (봇이 그래도 움직이게)
+        const acts = ['move_left', 'move_right', 'jump', 'idle'];
+        b.currentAction = acts[Math.floor(Math.random() * acts.length)];
+        b.actionTimer = 90;
+      }
     }
-  }, 2000);
+  }, 1500);
 }
 
 // ─── 봇 물리 업데이트 (매 프레임) ───
 function updateBots() {
   if (bots.length === 0) return;
-  const g = 0.6;
+  const g = 0.55;
   for (const b of bots) {
     if (b.hp <= 0) continue;
     if (b.actionTimer > 0) b.actionTimer--;
+    else {
+      // 액션 시간 초과 → 잠깐 idle
+      b.currentAction = 'idle';
+    }
     // 액션 실행
-    const speed = 1.6;
+    const speed = 1.8;
     switch (b.currentAction) {
       case 'move_left':
       case 'flee_left':
@@ -16257,11 +16269,11 @@ function updateBots() {
       case 'flee_right':
         b.vx = speed; b.dir = 1; break;
       case 'jump':
-        if (Math.abs(b.vy) < 0.5) b.vy = -8;
+        if (b.onGround) { b.vy = -9; b.onGround = false; }
         break;
       case 'attack':
       case 'mine':
-        // 근처 몹 있으면 공격 (단순화)
+        // 근처 몹 공격
         for (const a of (animals || [])) {
           if (a.dead) continue;
           if (Math.hypot(a.x - b.x, a.y - b.y) < TILE * 2) {
@@ -16270,40 +16282,62 @@ function updateBots() {
             break;
           }
         }
-        b.vx *= 0.7;
+        b.vx *= 0.5;
         break;
       case 'idle':
       default:
         b.vx *= 0.7; break;
     }
-    // 중력
-    b.vy = Math.min(10, b.vy + g);
-    // 이동
-    let nx = b.x + b.vx;
-    let ny = b.y + b.vy;
-    // 지면 체크
-    const bx = Math.floor((b.x + b.w/2) / TILE);
-    const bfy = Math.floor((ny + b.h) / TILE);
-    if (bfy >= 0 && bfy < WORLD_H && bx >= 0 && bx < WORLD_W) {
-      const t = world[bx] && world[bx][bfy];
-      if (t !== undefined && t !== TILES.AIR && t !== TILES.WATER && typeof t === 'number' && t > 0) {
-        ny = bfy * TILE - b.h; b.vy = 0;
-      }
+    // 중력 (심해에선 안 적용)
+    if (!oceanMode) b.vy = Math.min(12, b.vy + g);
+
+    // ── 정확한 벽/지면 충돌 (world는 [x][y] 순서) ──
+    function solidAt(px, py) {
+      const tx = Math.floor(px / TILE);
+      const ty = Math.floor(py / TILE);
+      if (tx < 0 || tx >= WORLD_W || ty < 0 || ty >= WORLD_H) return true;
+      const t = world[tx] && world[tx][ty];
+      // 숫자면 지상 타일, 객체면 심해 자원, null이면 통과
+      if (t === undefined || t === null) return false;
+      if (typeof t === 'number') return t !== TILES.AIR && t !== TILES.WATER;
+      if (typeof t === 'object') return !!t.type;   // 심해 자원
+      return false;
     }
-    // 벽
-    const fx = Math.floor((nx + (b.dir > 0 ? b.w : 0)) / TILE);
-    const fy = Math.floor((b.y + b.h/2) / TILE);
-    if (fy >= 0 && fy < WORLD_H && fx >= 0 && fx < WORLD_W) {
-      const t = world[fx] && world[fx][fy];
-      if (t !== undefined && t !== TILES.AIR && t !== TILES.WATER && typeof t === 'number' && t > 0) {
-        nx = b.x;
-        b.currentAction = b.currentAction === 'move_left' ? 'move_right' : 'move_left';
-      }
+
+    // Y 이동 (중력 → 지면 감지)
+    let newY = b.y + b.vy;
+    const footY = newY + b.h;
+    if (b.vy > 0 && (solidAt(b.x + 4, footY) || solidAt(b.x + b.w - 4, footY))) {
+      // 지면 위에 안착
+      newY = Math.floor(footY / TILE) * TILE - b.h;
+      b.vy = 0; b.onGround = true;
+    } else if (b.vy < 0 && (solidAt(b.x + 4, newY) || solidAt(b.x + b.w - 4, newY))) {
+      // 천장에 부딪힘
+      b.vy = 0; newY = b.y;
+    } else {
+      b.onGround = false;
     }
-    b.x = nx; b.y = ny;
+    b.y = newY;
+
+    // X 이동
+    let newX = b.x + b.vx;
+    const midY = b.y + b.h / 2;
+    const edgeX = b.vx > 0 ? newX + b.w : newX;
+    if (Math.abs(b.vx) > 0.1 && (solidAt(edgeX, midY) || solidAt(edgeX, b.y + 4))) {
+      // 벽 → 방향 반전 (다음 예측 전까지 갈아탐)
+      b.vx = 0;
+      b.currentAction = b.currentAction === 'move_left' ? 'move_right' :
+                        b.currentAction === 'move_right' ? 'move_left' : 'jump';
+      // 즉시 점프해서 벽 넘어보기
+      if (b.onGround) { b.vy = -8; b.onGround = false; }
+    } else {
+      b.x = newX;
+    }
+
     // 월드 경계
-    if (b.x < 0) b.x = 0;
-    if (b.x > WORLD_W * TILE - b.w) b.x = WORLD_W * TILE - b.w;
+    if (b.x < 0) { b.x = 0; b.currentAction = 'move_right'; }
+    if (b.x > WORLD_W * TILE - b.w) { b.x = WORLD_W * TILE - b.w; b.currentAction = 'move_left'; }
+    if (b.y > WORLD_H * TILE) { b.y = 100; b.vy = 0; }   // 떨어지면 리스폰
   }
 }
 
