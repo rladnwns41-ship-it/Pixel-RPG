@@ -1669,6 +1669,13 @@ window.submitReport = async function(target, reason) {
         <div class="bar-text"><span id="hungerText">100/100</span></div>
       </div>
     </div>
+    <div class="bar-row" id="o2Row" style="display:none;">
+      <span class="bar-label" style="color:#88ccff;">O₂</span>
+      <div class="bar-container" style="background:#001133; border:1px solid #223355;">
+        <div class="bar-fill" id="o2Bar" style="width:100%; background:linear-gradient(90deg,#4488ff,#88ccff,#aaddff);"></div>
+        <div class="bar-text"><span id="o2Text">100%</span></div>
+      </div>
+    </div>
     <div id="goldDisplay">💰 0 Gold</div>
   </div>
 
@@ -15529,32 +15536,26 @@ function drawOceanCreatures() {
   ctx.restore();
 }
 
-// 산소 게이지 UI (우측 상단, HP바랑 안 겹침)
+// 산소 게이지 UI (HTML bar 업데이트)
 function drawOceanUI() {
-  if (!oceanMode || !ctx) return;
-  ctx.save();
-  const barW = 180, barH = 14;
-  const bx = canvas.width - barW - 20;
-  const by = 20;
-  // 배경
-  ctx.fillStyle = 'rgba(0,0,0,0.6)';
-  ctx.fillRect(bx - 4, by - 4, barW + 8, barH + 22);
-  // 라벨
-  ctx.font = 'bold 8px "Press Start 2P", monospace';
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#88ccff';
-  ctx.fillText('🫧 O₂', bx, by - 2);
-  // 게이지 배경
-  ctx.fillStyle = '#001133';
-  ctx.fillRect(bx, by, barW, barH);
-  // 게이지 채움
-  const pct = _oceanOxygen / 100;
-  ctx.fillStyle = pct > 0.5 ? '#44aaff' : pct > 0.2 ? '#ffdd44' : '#ff4466';
-  ctx.fillRect(bx, by, Math.floor(barW * pct), barH);
-  ctx.fillStyle = '#fff';
-  ctx.textAlign = 'right';
-  ctx.fillText(Math.floor(_oceanOxygen) + '%', bx + barW - 4, by + 11);
-  ctx.restore();
+  const o2Row = document.getElementById('o2Row');
+  if (!o2Row) return;
+  if (!oceanMode) {
+    o2Row.style.display = 'none';
+    return;
+  }
+  o2Row.style.display = '';
+  const o2Bar = document.getElementById('o2Bar');
+  const o2Text = document.getElementById('o2Text');
+  const pct = Math.max(0, Math.min(100, _oceanOxygen));
+  if (o2Bar) {
+    o2Bar.style.width = pct + '%';
+    // 색상 상태
+    if (pct < 20) o2Bar.style.background = 'linear-gradient(90deg, #ff2244, #ff6688)';
+    else if (pct < 50) o2Bar.style.background = 'linear-gradient(90deg, #ffaa22, #ffdd66)';
+    else o2Bar.style.background = 'linear-gradient(90deg, #4488ff, #88ccff, #aaddff)';
+  }
+  if (o2Text) o2Text.textContent = Math.floor(pct) + '%';
 }
 
 // 심해 생물 공격 (플레이어 → 생물)
@@ -22317,8 +22318,8 @@ document.addEventListener('keydown', (e) => {
     if (!oceanMode && !spaceMode && !dungeonMode && window._oceanEnterHintActive) {
       tryEnterOcean(); return;
     }
-    // 심해에서 F 두 번 → 나가기 (수면 근처에서만)
-    if (oceanMode && player.y < TILE * 4) { exitOcean(); return; }
+    // 심해에서 F = 언제든지 지상으로 귀환
+    if (oceanMode) { exitOcean(); return; }
     if (tryOpenChest()) {} else if (tryBoardParkedVehicle()) {} else if (tryLootCorpseBox()) {} else { const nearDrop = droppedItems.some(d => { const now2 = Date.now(); if (now2 < d.dropProtectUntil && d.ownerId === player.name) return false; return Math.hypot(d.x-(player.x+player.w/2), d.y-(player.y+player.h/2)) < TILE*2.5; }); if (nearDrop) tryPickupDroppedItem(); else useItem(); }
   }
   if (e.code === 'KeyQ') placeBlock();
