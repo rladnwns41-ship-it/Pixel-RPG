@@ -9218,6 +9218,12 @@ function updatePlayer() {
     return;
   }
 
+  // 🌊 심해 전용 물리 (지상 로직 완전 대체)
+  if (oceanMode) {
+    updateOceanPlayer();
+    return;
+  }
+
   // ── 🕳️ 보이드 사망: 맵 완전 아래로 떨어지면 죽음 (걷기/비행/탈것 모두 적용) ──
   if (!dungeonMode && !spaceMode && player.y > (WORLD_H - 2) * TILE) {
     respawnPlayer('🕳️ 맵 아래로 떨어져 사망!');
@@ -9311,11 +9317,10 @@ function updatePlayer() {
           respawnPlayer('💧 익사로 사망! 마을에서 부활'); return;
         }
       }
-      if (danger) {
-        showNotification('💀 익사 중! 물에서 나오세요!', { persistent: true, id: 'swim', color: '#FF4444', border: '#FF6666' });
-      } else {
-        showNotification('💧 수영 중', { persistent: true, id: 'swim', color: '#88CCFF', border: '#4488FF' });
-      }
+      showNotification(danger ? '💀 익사 중! 물에서 나오세요!' : '💧 수영 중',
+        { persistent: true, id: 'swim',
+          color: danger ? '#FF4444' : '#88CCFF',
+          border: danger ? '#FF6666' : '#4488FF' });
     }
     return;
   }
@@ -9473,10 +9478,8 @@ function updatePlayer() {
     if (spaceMode) depthEl.style.color = playerOxygen < 25 ? '#FF4466' : '#66CCFF';
   }
 
-  // ---- 낙하 데미지 (심해·우주에선 무중력이므로 낙사 없음) ----
-  if (oceanMode || spaceMode) {
-    fallStartY = null;
-  } else if (!player.onGround && player.vy > 0) {
+  // ---- 낙하 데미지 ----
+  if (!player.onGround && player.vy > 0) {
     if (fallStartY === null) fallStartY = player.y;
   } else if (player.onGround) {
     if (fallStartY !== null) {
@@ -9541,7 +9544,7 @@ function updatePlayer() {
     }
   } else {
     player.drowning = 0;
-    if (!oceanMode) dismissNotificationById('swim');
+    dismissNotificationById('swim');
   }
 
   // ---- 던전 근접 알림 (오버월드에서만) ----
@@ -14981,14 +14984,19 @@ function tryEnterOcean() {
   farmPlots = []; droppedItems = []; animals = [];
   dungeonBuildings = []; corpseBoxes = []; placedChests = []; parkedVehicles = []; otherPlayers = {};
   player.x = 10 * TILE; player.y = 10 * TILE; player.vx = 0; player.vy = 0;
+  // 🔒 낙사 판정 리셋 (심해 이동 후 즉시 낙사 방지)
+  fallStartY = null;
+  player.onGround = true;
+  player.drowning = 0;
+  if (typeof dismissNotificationById === 'function') dismissNotificationById('swim');
   playerPressure = PRESSURE_MAX;
   _oceanOxygen = 100;
   _oceanBubbles = [];
   spawnOceanCreatures();
   oceanMode = true;
   markMinimapDirty(); _minimapWorldCanvas = null; _tileLayerDirty = true;
-  showNotification('🌊 심해 진입! 산소를 관리하세요. F키로 상승, S키로 하강', { duration: 4000 });
-  if (typeof addChatMessage === 'function') addChatMessage('시스템', '🌊 심해 도착! 진주·산호·심연광석을 채취하세요', '#4488FF');
+  showNotification('🌊 심해 진입! 산소를 관리하세요', { duration: 3000 });
+  if (typeof addChatMessage === 'function') addChatMessage('시스템', '🌊 심해 도착! 진주·산호·심연광석 채취 가능', '#4488FF');
 }
 
 // 심해 월드: 위쪽은 밝은 파랑, 아래로 갈수록 자원 많음
@@ -15117,8 +15125,6 @@ function exitOcean() {
   _oceanFishies = [];
   otherPlayers = {};
   markMinimapDirty(); _minimapWorldCanvas = null; _tileLayerDirty = true;
-  dismissNotificationById('swim');
-  window._lastOceanNotifState = null;
   showNotification('🌊 지상으로 귀환!');
 }
 window.tryEnterOcean = tryEnterOcean;
@@ -15126,11 +15132,9 @@ window.exitOcean = exitOcean;
 window.tryHarvestOcean = tryHarvestOcean;
 
 // ─── 물 근처 감지 & 진입 프롬프트 ───
+let _oceanHintLastShow = 0;
 function checkOceanEntryPrompt() {
-  if (oceanMode || spaceMode || dungeonMode || !player || !world) {
-    if (_oceanEnterHintEl) { _oceanEnterHintEl.remove(); _oceanEnterHintEl = null; }
-    return;
-  }
+  if (oceanMode || spaceMode || dungeonMode || !player || !world) return;
   // 플레이어 주변에 물 있는지 (world는 [x][y] 순서 주의!)
   const px = Math.floor((player.x + player.w/2) / TILE), py = Math.floor((player.y + player.h/2) / TILE);
   let hasWater = false;
@@ -15142,47 +15146,30 @@ function checkOceanEntryPrompt() {
     }
     if (hasWater) break;
   }
-  if (hasWater) {
-    if (!_oceanEnterHintEl) {
-      _oceanEnterHintEl = document.createElement('div');
-      _oceanEnterHintEl.style.cssText = `
-        position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%);
-        z-index: 500; pointer-events: none;
-        background: linear-gradient(180deg, #0a1e3a, #051022);
-        border-top: 2px solid #4488cc; border-left: 2px solid #4488cc;
-        border-bottom: 2px solid #051022; border-right: 2px solid #051022;
-        padding: 8px 16px; box-shadow: 3px 3px 0 #000;
-        font-family: 'Press Start 2P', monospace; font-size: 9px;
-        color: #88ccff; text-shadow: 1px 1px 0 #000;
-      `;
-      document.body.appendChild(_oceanEnterHintEl);
-    }
+  window._oceanEnterHintActive = hasWater; // F키 감지용
+  // 알림 통일: 3초에 1번 토스트로 (spam 방지)
+  const now = Date.now();
+  if (hasWater && now - _oceanHintLastShow > 3500) {
+    _oceanHintLastShow = now;
     const hasSuit = playerEquipmentHas('diving_suit');
-    _oceanEnterHintEl.innerHTML = hasSuit
-      ? '🌊 <span style="color:#ffdd66;">[F]</span> 심해 잠수'
-      : '🤿 잠수복이 필요합니다';
-  } else {
-    if (_oceanEnterHintEl) { _oceanEnterHintEl.remove(); _oceanEnterHintEl = null; }
+    if (typeof showNotification === 'function') {
+      showNotification(hasSuit ? '🌊 [F] 심해 잠수 가능' : '🤿 잠수복이 필요합니다', { duration: 2500, id: 'ocean_hint' });
+    }
   }
 }
 
-// ─── 심해 물리·생물·산소 업데이트 (매 프레임) ───
-function updateOcean() {
-  if (!oceanMode || !player) return;
+// ─── 심해 플레이어 물리 (수영 조작) ───
+function updateOceanPlayer() {
+  if (!player || !oceanMode) return;
 
-  // 부력: 중력 훨씬 약함 + 자연 상승
-  player.vy *= 0.92;    // 물 저항
-  player.vx *= 0.94;
-
-  // 잠수복 유무에 따른 산소·수압
+  // ── 산소 관리 ──
   const hasSuit = playerEquipmentHas('diving_suit');
   if (hasSuit) {
-    _oceanOxygen = Math.min(100, _oceanOxygen + 0.08); // 완만 회복
+    _oceanOxygen = Math.min(100, _oceanOxygen + 0.08);
   } else {
     _oceanOxygen -= 0.35;
     if (_oceanOxygen <= 0) {
       _oceanOxygen = 0;
-      // 산소 0 → 지속 데미지
       if (Math.random() < 0.05) {
         player.hp = Math.max(0, player.hp - 3);
         if (typeof spawnDamageNumber === 'function') spawnDamageNumber(player.x, player.y, '💨 산소부족', '#66CCFF');
@@ -15190,14 +15177,69 @@ function updateOcean() {
     }
   }
 
-  // 심해 잠수 알림 — 수영 중 알림과 완전히 동일한 방식
-  if (hasSuit) {
-    showNotification('🌊 심해 잠수 중', { persistent: true, id: 'swim', color: '#88CCFF', border: '#4488FF' });
-  } else if (_oceanOxygen <= 0) {
-    showNotification('💀 산소 고갈! 잠수복을 착용하세요!', { persistent: true, id: 'swim', color: '#FF4444', border: '#FF6666' });
-  } else {
-    showNotification('⚠️ 산소 부족! 잠수복이 필요합니다', { persistent: true, id: 'swim', color: '#FFDD44', border: '#FFAA00' });
+  // ── 수영 조작: WASD로 자유 이동 (중력 없음) ──
+  const SWIM_SPEED = 2.6;
+  const SWIM_ACCEL = 0.5;
+  let ax = 0, ay = 0;
+  if (!chatOpen) {
+    if (keys['KeyA'] || keys['ArrowLeft']) { ax = -SWIM_ACCEL; player.dir = -1; }
+    if (keys['KeyD'] || keys['ArrowRight']) { ax = SWIM_ACCEL; player.dir = 1; }
+    if (keys['KeyW'] || keys['ArrowUp'] || keys['Space']) { ay = -SWIM_ACCEL; }
+    if (keys['KeyS'] || keys['ArrowDown']) { ay = SWIM_ACCEL; }
   }
+  player.vx += ax;
+  player.vy += ay;
+  // 수영 감쇄 (물 저항)
+  player.vx *= 0.90;
+  player.vy *= 0.92;
+  // 약한 자연 상승 (부력)
+  player.vy += 0.05;
+  // 속도 제한
+  player.vx = Math.max(-SWIM_SPEED, Math.min(SWIM_SPEED, player.vx));
+  player.vy = Math.max(-SWIM_SPEED, Math.min(SWIM_SPEED, player.vy));
+
+  // ── 자원 타일 충돌 (자원 있는 칸은 통과 못 함, 그 외는 자유) ──
+  const oldX = player.x, oldY = player.y;
+  let newX = player.x + player.vx;
+  let newY = player.y + player.vy;
+
+  // 자원 타일 감지 (블록화)
+  function isSolidResource(px, py) {
+    const tx = Math.floor(px / TILE);
+    const ty = Math.floor(py / TILE);
+    if (tx < 0 || tx >= WORLD_W || ty < 0 || ty >= WORLD_H) return true; // 경계
+    const c = world[tx] && world[tx][ty];
+    return c && c.type; // 자원이면 solid
+  }
+
+  // X 이동 확인
+  if (!isSolidResource(newX + player.w/2, player.y + player.h/2)) {
+    player.x = newX;
+  } else {
+    player.vx = 0;
+  }
+  // Y 이동 확인
+  if (!isSolidResource(player.x + player.w/2, newY + player.h/2)) {
+    player.y = newY;
+  } else {
+    player.vy = 0;
+  }
+
+  // 월드 경계
+  if (player.x < 0) { player.x = 0; player.vx = 0; }
+  if (player.x > WORLD_W * TILE - player.w) { player.x = WORLD_W * TILE - player.w; player.vx = 0; }
+  if (player.y < 0) { player.y = 0; player.vy = 0; }
+  if (player.y > WORLD_H * TILE - player.h) { player.y = WORLD_H * TILE - player.h; player.vy = 0; }
+
+  // 낙사 판정 리셋 (심해에선 절대 낙사 X)
+  fallStartY = null;
+  player.onGround = true;
+}
+window.updateOceanPlayer = updateOceanPlayer;
+
+// ─── 심해 물리·생물·산소 업데이트 (매 프레임) — 배경/생물만 관리 ───
+function updateOcean() {
+  if (!oceanMode || !player) return;
 
   // 기포 스폰
   if (Math.random() < 0.15) spawnBubble();
@@ -15211,51 +15253,43 @@ function updateOcean() {
 
   // 생물 업데이트 (화면 근처만)
   const camCX = camera.x + canvas.width / 2;
-  const camCY = camera.y + canvas.height / 2;
   const CULL_DIST = canvas.width + 400;
   for (const f of _oceanFishies) {
     if (f.hp <= 0) continue;
-    // 화면에서 멀면 물리 스킵 (성능)
     if (Math.abs(f.x - camCX) > CULL_DIST) continue;
     if (f.type === 'jelly') {
       f.phase += 0.04;
       f.vy = -0.4 + Math.sin(f.phase) * 0.6;
       f.x += Math.sin(f.phase * 0.7) * 0.3;
       f.y += f.vy;
-      if (f.y < 100) f.y = WORLD_H * TILE - 100; // 무한 상승 방지
+      if (f.y < 100) f.y = WORLD_H * TILE - 100;
     } else if (f.type === 'shark') {
-      // 플레이어 추적 (일정 거리 안에서만)
       const dx = player.x - f.x, dy = player.y - f.y;
       const d = Math.hypot(dx, dy);
       if (d < 400) {
-        // 추적
         f.vx = (dx / d) * 2.2;
         f.vy = (dy / d) * 2.2;
       } else {
-        // 순찰
         if (Math.abs(f.vx) < 0.5) f.vx = (Math.random() > 0.5 ? 1 : -1) * 1.5;
       }
       f.x += f.vx; f.y += f.vy;
-      // 공격 판정
       if (d < TILE * 1.8 && f.cooldown <= 0) {
         f.cooldown = 60;
-        damagePlayerByAttack(f.dmg);
+        if (typeof damagePlayerByAttack === 'function') damagePlayerByAttack(f.dmg);
         if (typeof spawnDamageNumber === 'function') spawnDamageNumber(player.x, player.y, '🦈' + f.dmg, '#FF4466');
       }
       if (f.cooldown > 0) f.cooldown--;
     } else if (f.type === 'kraken') {
-      // 자기 자리 근처에서 촉수 휘두름 (원거리 접근 시 데미지)
       f.phase = (f.phase || 0) + 0.02;
       const dx = player.x - f.x, dy = player.y - f.y;
       const d = Math.hypot(dx, dy);
       if (d < 250 && f.cooldown <= 0) {
         f.cooldown = 90;
-        damagePlayerByAttack(f.dmg);
+        if (typeof damagePlayerByAttack === 'function') damagePlayerByAttack(f.dmg);
         if (typeof spawnDamageNumber === 'function') spawnDamageNumber(player.x, player.y, '🐙촉수!' + f.dmg, '#8844CC');
       }
       if (f.cooldown > 0) f.cooldown--;
     }
-    // 월드 경계
     if (f.x < 0) f.x = 0;
     if (f.x > WORLD_W * TILE) f.x = WORLD_W * TILE;
   }
@@ -15495,20 +15529,21 @@ function drawOceanCreatures() {
   ctx.restore();
 }
 
-// 산소 게이지 UI
+// 산소 게이지 UI (우측 상단, HP바랑 안 겹침)
 function drawOceanUI() {
   if (!oceanMode || !ctx) return;
   ctx.save();
-  const barW = 200, barH = 14;
-  const bx = 20, by = 60;
+  const barW = 180, barH = 14;
+  const bx = canvas.width - barW - 20;
+  const by = 20;
   // 배경
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.fillRect(bx - 4, by - 4, barW + 8, barH + 22);
   // 라벨
   ctx.font = 'bold 8px "Press Start 2P", monospace';
   ctx.textAlign = 'left';
   ctx.fillStyle = '#88ccff';
-  ctx.fillText('🫧 산소', bx, by - 2);
+  ctx.fillText('🫧 O₂', bx, by - 2);
   // 게이지 배경
   ctx.fillStyle = '#001133';
   ctx.fillRect(bx, by, barW, barH);
@@ -15517,7 +15552,8 @@ function drawOceanUI() {
   ctx.fillStyle = pct > 0.5 ? '#44aaff' : pct > 0.2 ? '#ffdd44' : '#ff4466';
   ctx.fillRect(bx, by, Math.floor(barW * pct), barH);
   ctx.fillStyle = '#fff';
-  ctx.fillText(Math.floor(_oceanOxygen) + '%', bx + barW - 40, by + 11);
+  ctx.textAlign = 'right';
+  ctx.fillText(Math.floor(_oceanOxygen) + '%', bx + barW - 4, by + 11);
   ctx.restore();
 }
 
@@ -16424,13 +16460,16 @@ window.openBotAdminPanel = async function() {
 };
 
 window.startBotTraining = async function() {
-  let token;
+  const token = prompt('BOT_SERVER_TOKEN 입력 (Render 환경변수):');
+  if (!token) return;
+  // 콜드스타트 대응: 먼저 헬스체크
+  showNotification('🔄 서버 깨우는 중...', { duration: 2000 });
   try {
-    const tr = await fetch('/bot-token', { headers: { 'x-token': NET?.token || '' } });
-    const tj = await tr.json();
-    if (!tj.ok || !tj.token) { showNotification('❌ 토큰 획득 실패: ' + (tj.error || '권한 없음')); return; }
-    token = tj.token;
-  } catch(e) { showNotification('❌ 토큰 요청 실패: ' + e.message); return; }
+    await fetch(BOT_SERVER_URL + '/', { method: 'GET' });
+  } catch(e) {
+    showNotification('❌ 봇 서버 연결 실패: ' + BOT_SERVER_URL, { duration: 5000 });
+    return;
+  }
   try {
     const r = await fetch(BOT_SERVER_URL + '/train', {
       method: 'POST',
@@ -16439,6 +16478,7 @@ window.startBotTraining = async function() {
     });
     const j = await r.json();
     if (j.error === 'unauthorized') { showNotification('❌ 토큰 틀림'); return; }
+    if (j.error) { showNotification('❌ ' + j.error, { duration: 3000 }); return; }
     if (j.started) {
       showNotification('🎓 학습 시작! 30초 후 확인', { duration: 3000 });
       document.querySelectorAll('.pixel-modal-overlay').forEach(el => {
@@ -16446,7 +16486,9 @@ window.startBotTraining = async function() {
       });
       setTimeout(() => window.openBotAdminPanel(), 1000);
     }
-  } catch(e) { showNotification('❌ 통신 실패: ' + e.message); }
+  } catch(e) {
+    showNotification('❌ 통신 실패: ' + e.message + ' (서버 재시작 중일 수 있음)', { duration: 5000 });
+  }
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -19933,8 +19975,6 @@ function showNotification(text, opts) {
       else existing.textContent = text;
     }
     existing._text = text;
-    if (opts?.color) existing.style.color = opts.color;
-    if (opts?.border) existing.style.borderColor = opts.border;
     return;
   }
 
@@ -22249,7 +22289,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyV') parkVehicle();
   if (e.code === 'KeyF') {
     // 심해 근처면 우선 잠수 시도 (물 근처 & 지상)
-    if (!oceanMode && !spaceMode && !dungeonMode && _oceanEnterHintEl) {
+    if (!oceanMode && !spaceMode && !dungeonMode && window._oceanEnterHintActive) {
       tryEnterOcean(); return;
     }
     // 심해에서 F 두 번 → 나가기 (수면 근처에서만)
