@@ -16272,13 +16272,125 @@ function startBotAI() {
 }
 
 // ─── 봇 물리 업데이트 (매 프레임, 플레이어와 동일) ───
+// 캐낼 수 있는 타일 (블록/나무/광석)
+const BOT_MINEABLE_TILES = new Set([
+  TILES.GRASS, TILES.DIRT, TILES.STONE, TILES.SAND,
+  TILES.WOOD, TILES.LEAF, TILES.PLANK, TILES.ROOF,
+  TILES.IRON_ORE, TILES.GOLD_ORE, TILES.COPPER_ORE, TILES.DIAMOND_ORE, TILES.COAL_ORE,
+  TILES.BERRY_BUSH, TILES.MUSHROOM, TILES.HERB, TILES.WHEAT,
+  TILES.BRICK, TILES.GLASS, TILES.HAY,
+]);
+// 타일 → 드롭 아이템 매핑
+const BOT_TILE_DROPS = {
+  [TILES.GRASS]: 'dirt', [TILES.DIRT]: 'dirt', [TILES.STONE]: 'stone', [TILES.SAND]: 'sand',
+  [TILES.WOOD]: 'wood', [TILES.LEAF]: null, [TILES.PLANK]: 'plank',
+  [TILES.IRON_ORE]: 'iron_ore', [TILES.GOLD_ORE]: 'gold_ore', [TILES.COPPER_ORE]: 'copper_ore',
+  [TILES.DIAMOND_ORE]: 'diamond', [TILES.COAL_ORE]: 'coal',
+  [TILES.BERRY_BUSH]: 'berry', [TILES.MUSHROOM]: 'mushroom', [TILES.HERB]: 'herb', [TILES.WHEAT]: 'wheat',
+  [TILES.BRICK]: 'brick', [TILES.GLASS]: 'glass', [TILES.HAY]: 'hay',
+};
+
+// 봇이 인벤에 아이템 추가
+function botAddItem(bot, itemId, count) {
+  if (!bot.inventory) bot.inventory = [];
+  const slot = bot.inventory.find(s => s && s.id === itemId);
+  if (slot) slot.count += count;
+  else bot.inventory.push({ id: itemId, count });
+}
+
+// 봇이 근처 블록 캐기
+function botMineNearby(bot) {
+  const cx = Math.floor((bot.x + bot.w/2) / TILE);
+  const cy = Math.floor((bot.y + bot.h/2) / TILE);
+  // 봇 앞쪽과 위/아래 우선순위로 캐기
+  const positions = [
+    [cx + bot.dir, cy],     // 앞 (같은 높이)
+    [cx + bot.dir, cy - 1], // 앞 위
+    [cx, cy + 1],           // 발밑
+    [cx, cy - 1],           // 머리 위 (나무)
+    [cx + bot.dir, cy + 1], // 앞 발밑
+  ];
+  for (const [tx, ty] of positions) {
+    if (tx < 0 || tx >= WORLD_W || ty < 0 || ty >= WORLD_H) continue;
+    const tile = world[tx] && world[tx][ty];
+    if (typeof tile !== 'number' || !BOT_MINEABLE_TILES.has(tile)) continue;
+    // 캐기 성공
+    const dropId = BOT_TILE_DROPS[tile];
+    world[tx][ty] = TILES.AIR;
+    _tileLayerDirty = true;
+    if (dropId) botAddItem(bot, dropId, 1);
+    // 타일 파괴 이벤트 (다른 유저에게도 보이도록)
+    try {
+      if (supabase && supabase.broadcast) {
+        supabase.broadcast('tile_break', { x: tx, y: ty });
+      }
+    } catch(e) {}
+    return true;
+  }
+  return false;
+}
+
+// 봇이 근처 드롭 아이템 줍기
+function botPickupNearby(bot) {
+  if (!droppedItems || droppedItems.length === 0) return false;
+  const bcx = bot.x + bot.w/2, bcy = bot.y + bot.h/2;
+  for (let i = droppedItems.length - 1; i >= 0; i--) {
+    const d = droppedItems[i];
+    if (Math.hypot(d.x - bcx, d.y - bcy) < TILE * 2.5) {
+      botAddItem(bot, d.id, d.count || 1);
+      droppedItems.splice(i, 1);
+      return true;
+    }
+  }
+  return false;
+}
+
+// 봇이 아이템 사용 (음식으로 힐 등)
+function botUseItem(bot) {
+  if (!bot.inventory) return false;
+  // HP 낮으면 음식 우선 사용
+  if (bot.hp < bot.maxHp * 0.5) {
+    const foods = ['apple', 'berry', 'bread', 'cooked_beef', 'cooked_fish', 'mushroom_soup', 'energy_bar'];
+    for (const foodId of foods) {
+      const slot = bot.inventory.find(s => s && s.id === foodId);
+      if (slot) {
+        const healItem = ITEMS[foodId];
+        const heal = healItem?.heal || 20;
+        bot.hp = Math.min(bot.maxHp, bot.hp + heal);
+        slot.count--;
+        if (slot.count <= 0) bot.inventory.splice(bot.inventory.indexOf(slot), 1);
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// 봇 리스폰
+function botRespawn(bot) {
+  bot.hp = bot.maxHp;
+  bot.x = (player ? player.x : WORLD_W * TILE / 2) + (Math.random() - 0.5) * 300;
+  bot.y = (player ? player.y : 200) - 100;
+  bot.vx = 0; bot.vy = 0;
+  bot.currentAction = 'idle';
+  bot.actionTimer = 60;
+}
+
 function updateBots() {
   if (bots.length === 0) return;
   const g = 0.55;
   for (const b of bots) {
-    if (b.hp <= 0) continue;
+    // 사망 → 3초 후 리스폰
+    if (b.hp <= 0) {
+      b._deathTimer = (b._deathTimer || 0) + 1;
+      if (b._deathTimer > 180) { botRespawn(b); b._deathTimer = 0; }
+      continue;
+    }
     if (b.actionTimer > 0) b.actionTimer--;
     else b.currentAction = 'idle';
+
+    // 자동 힐 (HP 낮으면 상시 시도)
+    if (b.hp < b.maxHp * 0.5 && Math.random() < 0.01) botUseItem(b);
 
     // 액션 실행
     const speed = 1.8;
@@ -16291,8 +16403,8 @@ function updateBots() {
         if (b.onGround) { b.vy = -9; b.onGround = false; b.jumping = true; }
         break;
       case 'attack':
-      case 'mine':
         b.attacking = true; b.attackTimer = 12;
+        // 근처 몹 공격
         for (const a of (animals || [])) {
           if (a.dead) continue;
           if (Math.hypot(a.x - b.x, a.y - b.y) < TILE * 2) {
@@ -16303,8 +16415,25 @@ function updateBots() {
         }
         b.vx *= 0.5;
         break;
+      case 'mine':
+        // 블록/나무 캐기
+        b.attacking = true; b.attackTimer = 8;
+        botMineNearby(b);
+        b.vx *= 0.5;
+        break;
+      case 'pickup':
+        botPickupNearby(b);
+        b.vx *= 0.7;
+        break;
+      case 'use_item':
+        botUseItem(b);
+        b.vx *= 0.7;
+        break;
       case 'idle': default:
-        b.vx *= 0.7; break;
+        b.vx *= 0.7;
+        // idle 중이라도 근처 아이템 자동 줍기
+        if (Math.random() < 0.1) botPickupNearby(b);
+        break;
     }
     if (b.attackTimer > 0) { b.attackTimer--; if (b.attackTimer <= 0) b.attacking = false; }
 
@@ -16341,10 +16470,16 @@ function updateBots() {
     const midY = b.y + b.h / 2;
     const edgeX = b.vx > 0 ? newX + b.w : newX;
     if (Math.abs(b.vx) > 0.1 && (solidAt(edgeX, midY) || solidAt(edgeX, b.y + 4))) {
-      b.vx = 0;
-      b.currentAction = b.currentAction === 'move_left' ? 'move_right' :
-                        b.currentAction === 'move_right' ? 'move_left' : 'jump';
-      if (b.onGround) { b.vy = -8; b.onGround = false; }
+      // 벽 → 자동으로 캐기 시도 (진짜 플레이어처럼!)
+      if (botMineNearby(b)) {
+        b.vx = 0;
+      } else {
+        // 못 캐면 방향 반전 or 점프
+        b.vx = 0;
+        b.currentAction = b.currentAction === 'move_left' ? 'move_right' :
+                          b.currentAction === 'move_right' ? 'move_left' : 'jump';
+        if (b.onGround) { b.vy = -8; b.onGround = false; }
+      }
     } else {
       b.x = newX;
     }
@@ -16352,7 +16487,7 @@ function updateBots() {
     // 월드 경계
     if (b.x < 0) { b.x = 0; b.currentAction = 'move_right'; }
     if (b.x > WORLD_W * TILE - b.w) { b.x = WORLD_W * TILE - b.w; b.currentAction = 'move_left'; }
-    if (b.y > WORLD_H * TILE) { b.y = 100; b.vy = 0; }
+    if (b.y > WORLD_H * TILE) botRespawn(b);
   }
 }
 
