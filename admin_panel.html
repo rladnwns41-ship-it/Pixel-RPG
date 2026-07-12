@@ -16372,128 +16372,237 @@ function drawBots() {
 }
 
 // ─── 봇 관리자 패널 ───
+let _botPanelPollInterval = null;
+
 window.openBotAdminPanel = async function() {
   if (!isAdmin()) { showNotification('❌ 관리자 전용'); return; }
   const overlay = document.createElement('div');
   overlay.className = 'pixel-modal-overlay';
-  overlay.onmousedown = (e) => { if (e.target === overlay) overlay.remove(); };
-  // 서버 상태 조회
-  let health = { modelLoaded: false };
-  let stats = { total: 0, actionDist: {} };
-  let trainStatus = { isTraining: false };
-  try {
-    health = await fetch(BOT_SERVER_URL + '/').then(r => r.json());
-    stats = await fetch(BOT_SERVER_URL + '/stats').then(r => r.json());
-    trainStatus = await fetch(BOT_SERVER_URL + '/train/status').then(r => r.json());
-  } catch(e) {}
-  const distStr = Object.entries(stats.actionDist || {})
-    .sort((a,b)=>b[1]-a[1])
-    .map(([a,c]) => `<span style="color:#aab4d0;">${a}</span>=<span style="color:#ffdd66;">${c}</span>`)
-    .join(' · ') || '<span style="color:#5a628f;">데이터 없음</span>';
+  overlay.id = 'botAdminOverlay';
+  overlay.onmousedown = (e) => { if (e.target === overlay) { closeBotPanel(); } };
 
   overlay.innerHTML = `
-    <div class="pixel-modal" style="width: min(560px, 92vw); max-height: 90vh; display:flex; flex-direction:column;">
+    <div class="pixel-modal" style="width: min(620px, 92vw); max-height: 92vh; display:flex; flex-direction:column;">
       <div class="panel-header">
         <span class="panel-title">🤖 봇 관리자 패널</span>
-        <button class="panel-close" onclick="this.closest('.pixel-modal-overlay').remove()">✕</button>
+        <button class="panel-close" onclick="closeBotPanel()">✕</button>
       </div>
-      <div class="panel-body" style="padding: 14px; overflow-y: auto; font-family:'Press Start 2P',monospace;">
-
-        <!-- 서버 상태 -->
-        <div style="margin-bottom:16px; padding:10px; background:rgba(10,14,30,0.6); border:1px solid #1c2244;">
-          <div style="font-size:8px; color:#ffd24a; margin-bottom:6px;">📡 서버 상태</div>
-          <div style="font-size:7px; line-height:1.9; color:#c8d0ff;">
-            연결: <span style="color:${health.ok?'#66ff88':'#ff6666'};">${health.ok?'✅ 정상':'❌ 오프라인'}</span><br>
-            모델: <span style="color:${health.modelLoaded?'#66ff88':'#ffaa66'};">${health.modelLoaded?'✅ 로드됨':'⚠️ 학습 필요'}</span><br>
-            수집된 데이터: <span style="color:#ffdd66;">${(stats.total||0).toLocaleString()}</span>개
-          </div>
-        </div>
-
-        <!-- 로깅 컨트롤 -->
-        <div style="margin-bottom:16px; padding:10px; background:rgba(10,14,30,0.6); border:1px solid #1c2244;">
-          <div style="font-size:8px; color:#ffd24a; margin-bottom:8px;">📝 데이터 수집</div>
-          <div style="display:flex; gap:6px;">
-            <button onclick="startBotLogging(); this.closest('.pixel-modal-overlay').remove(); openBotAdminPanel();"
-              style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
-              background:${_botLoggingEnabled?'#0a2a10':'#0a2010'};
-              border-top:2px solid #3a6a3a; border-left:2px solid #3a6a3a;
-              border-bottom:2px solid #041004; border-right:2px solid #041004;
-              color:#88ff88;">▶ 로깅 시작${_botLoggingEnabled?' ✅':''}</button>
-            <button onclick="stopBotLogging(); this.closest('.pixel-modal-overlay').remove(); openBotAdminPanel();"
-              style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
-              background:#200a10;
-              border-top:2px solid #6a3a3a; border-left:2px solid #6a3a3a;
-              border-bottom:2px solid #100404; border-right:2px solid #100404;
-              color:#ff8888;">⏹ 로깅 중지</button>
-          </div>
-          <div style="font-size:6.5px; color:#8890bb; margin-top:6px; line-height:1.7;">
-            현재: ${_botLoggingEnabled?'🟢 수집 중':'🔴 중지됨'} · 1초에 1건<br>
-            액션 분포: ${distStr}
-          </div>
-        </div>
-
-        <!-- 학습 -->
-        <div style="margin-bottom:16px; padding:10px; background:rgba(10,14,30,0.6); border:1px solid #1c2244;">
-          <div style="font-size:8px; color:#ffd24a; margin-bottom:8px;">🎓 모델 학습</div>
-          ${trainStatus.isTraining ? `
-            <div style="font-size:7px; color:#ffaa66; line-height:1.8;">
-              🔄 학습 중...<br>
-              epoch: ${trainStatus.progress?.epoch || 0}<br>
-              loss: ${trainStatus.progress?.loss?.toFixed(4) || '?'}<br>
-              acc: ${trainStatus.progress?.acc ? (trainStatus.progress.acc*100).toFixed(1)+'%' : '?'}
-            </div>
-            <button onclick="this.closest('.pixel-modal-overlay').remove(); openBotAdminPanel();"
-              style="width:100%; margin-top:6px; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
-              background:#1a1a2a; border:2px solid #445; color:#aab;">🔄 새로고침</button>
-          ` : `
-            <button onclick="startBotTraining()"
-              style="width:100%; font-family:inherit; font-size:8px; padding:10px; cursor:pointer;
-              background:linear-gradient(180deg,#2a1a05,#150a02);
-              border-top:2px solid #886633; border-left:2px solid #886633;
-              border-bottom:2px solid #221108; border-right:2px solid #221108;
-              color:#ffcc88;">🎓 학습 시작 (${stats.total||0}개 데이터, 10 epoch)</button>
-            <div style="font-size:6.5px; color:#8890bb; margin-top:6px; line-height:1.7;">
-              최소 20개 데이터 필요. 학습에 30초~2분 소요.<br>
-              학습 후 자동으로 모델 저장됨.
-            </div>
-          `}
-        </div>
-
-        <!-- 봇 스폰 -->
-        <div style="margin-bottom:16px; padding:10px; background:rgba(10,14,30,0.6); border:1px solid #1c2244;">
-          <div style="font-size:8px; color:#ffd24a; margin-bottom:8px;">🎮 봇 관리</div>
-          <div style="font-size:7px; color:#c8d0ff; margin-bottom:6px;">현재 봇: ${bots.filter(b=>b.hp>0).length}마리</div>
-          <div style="display:flex; gap:6px;">
-            <button onclick="spawnLearningBot(1); this.closest('.pixel-modal-overlay').remove(); openBotAdminPanel();"
-              style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
-              background:#0a1a3a; border-top:2px solid #4488cc; border-left:2px solid #4488cc;
-              border-bottom:2px solid #051022; border-right:2px solid #051022;
-              color:#88ccff;">+1 봇</button>
-            <button onclick="spawnLearningBot(3); this.closest('.pixel-modal-overlay').remove(); openBotAdminPanel();"
-              style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
-              background:#0a1a3a; border-top:2px solid #4488cc; border-left:2px solid #4488cc;
-              border-bottom:2px solid #051022; border-right:2px solid #051022;
-              color:#88ccff;">+3 봇</button>
-            <button onclick="bots = []; this.closest('.pixel-modal-overlay').remove(); openBotAdminPanel();"
-              style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
-              background:#200a10; border:2px solid #663; color:#ffaaaa;">💀 전체 제거</button>
-          </div>
-        </div>
-
+      <div class="panel-body" id="botPanelBody" style="padding: 14px; overflow-y: auto; font-family:'Press Start 2P',monospace;">
+        <div style="text-align:center; padding:30px; color:#888;">🔄 상태 로딩 중...</div>
       </div>
     </div>`;
   document.body.appendChild(overlay);
+
+  // 실시간 폴링 (2초에 1번)
+  await refreshBotPanel();
+  if (_botPanelPollInterval) clearInterval(_botPanelPollInterval);
+  _botPanelPollInterval = setInterval(refreshBotPanel, 2000);
 };
 
+window.closeBotPanel = function() {
+  const el = document.getElementById('botAdminOverlay');
+  if (el) el.remove();
+  if (_botPanelPollInterval) { clearInterval(_botPanelPollInterval); _botPanelPollInterval = null; }
+};
+
+async function refreshBotPanel() {
+  const body = document.getElementById('botPanelBody');
+  if (!body) { if (_botPanelPollInterval) { clearInterval(_botPanelPollInterval); _botPanelPollInterval = null; } return; }
+
+  // API 호출들 (병렬)
+  let health = { ok: false }, diag = null, stats = { total: 0, actionDist: {} }, trainStatus = { isTraining: false };
+  try {
+    [health, diag, stats, trainStatus] = await Promise.all([
+      fetch(BOT_SERVER_URL + '/').then(r => r.json()).catch(() => ({ ok: false })),
+      fetch(BOT_SERVER_URL + '/diagnose').then(r => r.json()).catch(() => null),
+      fetch(BOT_SERVER_URL + '/stats').then(r => r.json()).catch(() => ({ total: 0 })),
+      fetch(BOT_SERVER_URL + '/train/status').then(r => r.json()).catch(() => ({ isTraining: false })),
+    ]);
+  } catch(e) {}
+
+  const distArr = Object.entries(stats.actionDist || {}).sort((a,b)=>b[1]-a[1]);
+  const totalDist = distArr.reduce((sum, [_, c]) => sum + c, 0) || 1;
+  const distStr = distArr.length === 0 ? '<span style="color:#5a628f; font-size:7px;">데이터 없음</span>' :
+    distArr.map(([a,c]) => {
+      const pct = ((c/totalDist)*100).toFixed(0);
+      return `<div style="display:flex; align-items:center; gap:6px; font-size:7px; margin:2px 0;">
+        <span style="min-width:60px; color:#aab4d0;">${a}</span>
+        <div style="flex:1; height:6px; background:#1a1e2e; border:1px solid #2a3050; overflow:hidden;">
+          <div style="height:100%; width:${pct}%; background:linear-gradient(90deg,#4488ff,#88ccff);"></div>
+        </div>
+        <span style="min-width:36px; color:#ffdd66; text-align:right;">${c}</span>
+        <span style="min-width:32px; color:#8890bb; text-align:right;">${pct}%</span>
+      </div>`;
+    }).join('');
+
+  // 진단 정보
+  const diagRows = diag ? Object.entries(diag).map(([k, v]) => `
+    <div style="font-size:7px; line-height:1.7;">
+      <span style="color:#8890bb; min-width:130px; display:inline-block;">${k}:</span>
+      <span style="color:${String(v).includes('❌') ? '#ff6666' : String(v).includes('⚠️') ? '#ffaa66' : String(v).includes('✅') ? '#66ff88' : '#c8d0ff'};">${v}</span>
+    </div>`).join('') : '<span style="color:#ff6666; font-size:7px;">진단 서버 연결 실패</span>';
+
+  // 학습 진행률
+  let trainSection = '';
+  const p = trainStatus.progress;
+  if (trainStatus.isTraining && p) {
+    const epochPct = p.total_epochs ? (p.epoch / p.total_epochs * 100).toFixed(1) : 0;
+    const phaseText = { fetching_data: '📥 데이터 가져오는 중', preparing_tensors: '📊 데이터 준비 중', training: '🧠 학습 중', saving: '💾 저장 중', done: '✅ 완료' }[p.phase] || p.phase;
+    // 히스토리 그래프 (간단한 텍스트 그래프)
+    const hist = (trainStatus.history || []).slice(-5).map(h =>
+      `epoch ${h.epoch}: loss=<span style="color:#ff8866;">${h.loss.toFixed(4)}</span> acc=<span style="color:#66ffaa;">${(h.acc*100).toFixed(1)}%</span> val=<span style="color:#88ccff;">${(h.val_acc*100).toFixed(1)}%</span>`
+    ).join('<br>');
+    trainSection = `
+      <div style="padding:12px; background:linear-gradient(180deg,#1a1a2e,#0a0a1e); border:2px solid #4a6acc; margin-bottom:14px;">
+        <div style="font-size:9px; color:#88ccff; margin-bottom:8px; text-align:center;">
+          🎓 <span style="animation: pulse 1s infinite;">학습 진행 중</span> · ${trainStatus.elapsedSec}초 경과
+        </div>
+        <div style="font-size:7px; color:#ffdd66; margin-bottom:4px;">${phaseText}</div>
+        <!-- 에폭 진행률 -->
+        <div style="background:#0a0e1e; height:16px; border:1px solid #2a3050; position:relative; overflow:hidden;">
+          <div style="height:100%; width:${epochPct}%; background:linear-gradient(90deg,#4488ff,#88ccff,#aaddff); transition:width 0.5s;"></div>
+          <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:7px; color:#fff; text-shadow: 1px 1px 0 #000;">
+            Epoch ${p.epoch || 0} / ${p.total_epochs || '?'} (${epochPct}%)
+          </div>
+        </div>
+        <!-- 지표 -->
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-top:8px; font-size:7px;">
+          <div style="text-align:center; padding:4px; background:#0a0e1e; border:1px solid #2a3050;">
+            <div style="color:#8890bb;">Loss</div>
+            <div style="color:#ff8866; font-size:9px; margin-top:2px;">${p.loss ? p.loss.toFixed(4) : '-'}</div>
+          </div>
+          <div style="text-align:center; padding:4px; background:#0a0e1e; border:1px solid #2a3050;">
+            <div style="color:#8890bb;">Train Acc</div>
+            <div style="color:#66ffaa; font-size:9px; margin-top:2px;">${p.acc ? (p.acc*100).toFixed(1)+'%' : '-'}</div>
+          </div>
+          <div style="text-align:center; padding:4px; background:#0a0e1e; border:1px solid #2a3050;">
+            <div style="color:#8890bb;">Val Acc</div>
+            <div style="color:#88ccff; font-size:9px; margin-top:2px;">${p.val_acc ? (p.val_acc*100).toFixed(1)+'%' : '-'}</div>
+          </div>
+        </div>
+        <!-- 히스토리 -->
+        ${hist ? `<div style="font-size:6.5px; color:#8890bb; margin-top:8px; line-height:1.8; padding-top:6px; border-top:1px solid #2a3050;">
+          <div style="color:#aab4d0; margin-bottom:3px;">최근 5 에폭:</div>${hist}
+        </div>` : ''}
+        <div style="font-size:6.5px; color:#5a628f; margin-top:6px; text-align:center;">2초마다 자동 갱신</div>
+      </div>
+    `;
+  } else if (trainStatus.error) {
+    trainSection = `
+      <div style="padding:12px; background:linear-gradient(180deg,#2a0a0a,#150505); border:2px solid #ff4466; margin-bottom:14px;">
+        <div style="font-size:9px; color:#ff6688; margin-bottom:6px;">❌ 학습 실패</div>
+        <div style="font-size:7px; color:#ffcccc; line-height:1.8; word-break:break-all;">${trainStatus.error}</div>
+        ${trainStatus.error.includes('publishable') ? `
+          <div style="font-size:7px; color:#ffdd66; margin-top:8px; padding:6px; background:#1a1a2e; border:1px solid #aa8833;">
+            💡 해결: Render 환경변수 <span style="color:#88ccff;">SUPABASE_KEY</span>를<br>
+            Supabase의 <span style="color:#88ccff;">service_role</span> 키로 교체 후 재배포!
+          </div>
+        ` : ''}
+      </div>
+    `;
+  } else if (p && p.phase === 'done') {
+    trainSection = `
+      <div style="padding:12px; background:linear-gradient(180deg,#0a2a1a,#051510); border:2px solid #44ff88; margin-bottom:14px;">
+        <div style="font-size:9px; color:#66ffaa; margin-bottom:6px;">✅ 학습 완료!</div>
+        <div style="font-size:7px; color:#c8d0ff; line-height:1.9;">
+          최종 정확도: <span style="color:#66ffaa;">${p.acc ? (p.acc*100).toFixed(1)+'%' : '?'}</span><br>
+          검증 정확도: <span style="color:#88ccff;">${p.val_acc ? (p.val_acc*100).toFixed(1)+'%' : '?'}</span><br>
+          학습 시간: <span style="color:#ffdd66;">${p.elapsed_sec}초</span><br>
+          샘플 수: <span style="color:#ffdd66;">${p.samples}개</span>
+        </div>
+      </div>
+    `;
+  }
+
+  body.innerHTML = `
+    <!-- 서버 상태 -->
+    <div style="margin-bottom:12px; padding:10px; background:rgba(10,14,30,0.6); border:1px solid #1c2244;">
+      <div style="font-size:8px; color:#ffd24a; margin-bottom:6px;">📡 서버 상태</div>
+      <div style="font-size:7px; line-height:1.9;">
+        연결: <span style="color:${health.ok?'#66ff88':'#ff6666'};">${health.ok?'✅ 정상':'❌ 오프라인'}</span> ·
+        모델: <span style="color:${health.modelLoaded?'#66ff88':'#ffaa66'};">${health.modelLoaded?'✅ 로드됨':'⚠️ 없음'}</span> ·
+        데이터: <span style="color:#ffdd66;">${(stats.total||0).toLocaleString()}</span>개
+      </div>
+    </div>
+
+    <!-- 진단 -->
+    <details style="margin-bottom:12px; background:rgba(10,14,30,0.6); border:1px solid #1c2244; padding:8px;">
+      <summary style="font-size:8px; color:#ffaa66; cursor:pointer;">🩺 상세 진단 (클릭)</summary>
+      <div style="margin-top:8px;">${diagRows}</div>
+    </details>
+
+    <!-- 학습 상태 (조건부) -->
+    ${trainSection}
+
+    <!-- 로깅 -->
+    <div style="margin-bottom:12px; padding:10px; background:rgba(10,14,30,0.6); border:1px solid #1c2244;">
+      <div style="font-size:8px; color:#ffd24a; margin-bottom:8px;">📝 데이터 수집 · ${_botLoggingEnabled?'<span style="color:#66ff88;">🟢 수집 중</span>':'<span style="color:#ff8888;">🔴 중지</span>'}</div>
+      <div style="display:flex; gap:6px; margin-bottom:8px;">
+        <button onclick="startBotLogging(); setTimeout(refreshBotPanel, 100);"
+          style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
+          background:${_botLoggingEnabled?'#0a2a10':'#0a2010'};
+          border-top:2px solid #3a6a3a; border-left:2px solid #3a6a3a;
+          border-bottom:2px solid #041004; border-right:2px solid #041004;
+          color:#88ff88;">▶ 시작${_botLoggingEnabled?' ✅':''}</button>
+        <button onclick="stopBotLogging(); setTimeout(refreshBotPanel, 100);"
+          style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
+          background:#200a10;
+          border-top:2px solid #6a3a3a; border-left:2px solid #6a3a3a;
+          border-bottom:2px solid #100404; border-right:2px solid #100404;
+          color:#ff8888;">⏹ 중지</button>
+      </div>
+      <div style="font-size:6.5px; color:#8890bb; line-height:1.7;">액션 분포:</div>
+      <div style="margin-top:4px;">${distStr}</div>
+    </div>
+
+    <!-- 학습 컨트롤 -->
+    ${!trainStatus.isTraining ? `
+      <div style="margin-bottom:12px; padding:10px; background:rgba(10,14,30,0.6); border:1px solid #1c2244;">
+        <div style="font-size:8px; color:#ffd24a; margin-bottom:8px;">🎓 모델 학습</div>
+        <button onclick="startBotTraining()"
+          style="width:100%; font-family:inherit; font-size:8px; padding:10px; cursor:pointer;
+          background:linear-gradient(180deg,#2a1a05,#150a02);
+          border-top:2px solid #886633; border-left:2px solid #886633;
+          border-bottom:2px solid #221108; border-right:2px solid #221108;
+          color:#ffcc88;">🎓 학습 시작 (${stats.total||0}개 · 10 epoch)</button>
+        <div style="font-size:6.5px; color:#8890bb; margin-top:6px; line-height:1.7;">
+          ⚠️ 최소 20개 데이터 필요<br>
+          ⚠️ SUPABASE_KEY가 service_role이어야 학습 가능
+        </div>
+      </div>
+    ` : ''}
+
+    <!-- 봇 관리 -->
+    <div style="padding:10px; background:rgba(10,14,30,0.6); border:1px solid #1c2244;">
+      <div style="font-size:8px; color:#ffd24a; margin-bottom:8px;">🎮 봇 관리 · 현재 ${bots.filter(b=>b.hp>0).length}마리</div>
+      <div style="display:flex; gap:6px;">
+        <button onclick="spawnLearningBot(1); setTimeout(refreshBotPanel, 500);"
+          style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
+          background:#0a1a3a; border-top:2px solid #4488cc; border-left:2px solid #4488cc;
+          border-bottom:2px solid #051022; border-right:2px solid #051022;
+          color:#88ccff;">+1 봇</button>
+        <button onclick="spawnLearningBot(3); setTimeout(refreshBotPanel, 500);"
+          style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
+          background:#0a1a3a; border-top:2px solid #4488cc; border-left:2px solid #4488cc;
+          border-bottom:2px solid #051022; border-right:2px solid #051022;
+          color:#88ccff;">+3 봇</button>
+        <button onclick="bots = []; refreshBotPanel();"
+          style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
+          background:#200a10; border:2px solid #663; color:#ffaaaa;">💀 전체제거</button>
+      </div>
+    </div>
+    <style>@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }</style>
+  `;
+}
+
 window.startBotTraining = async function() {
-  const token = prompt('BOT_SERVER_TOKEN 입력 (Render 환경변수):');
+  const token = prompt('BOT_SERVER_TOKEN 입력:');
   if (!token) return;
-  // 콜드스타트 대응: 먼저 헬스체크
   showNotification('🔄 서버 깨우는 중...', { duration: 2000 });
   try {
     await fetch(BOT_SERVER_URL + '/', { method: 'GET' });
   } catch(e) {
-    showNotification('❌ 봇 서버 연결 실패: ' + BOT_SERVER_URL, { duration: 5000 });
+    showNotification('❌ 봇 서버 연결 실패', { duration: 4000 });
     return;
   }
   try {
@@ -16504,16 +16613,15 @@ window.startBotTraining = async function() {
     });
     const j = await r.json();
     if (j.error === 'unauthorized') { showNotification('❌ 토큰 틀림'); return; }
+    if (j.error === 'busy') { showNotification('⚠️ 이미 학습 중'); return; }
     if (j.error) { showNotification('❌ ' + j.error, { duration: 3000 }); return; }
     if (j.started) {
-      showNotification('🎓 학습 시작! 30초 후 확인', { duration: 3000 });
-      document.querySelectorAll('.pixel-modal-overlay').forEach(el => {
-        if (el.querySelector('.panel-title')?.textContent?.includes('봇 관리자')) el.remove();
-      });
-      setTimeout(() => window.openBotAdminPanel(), 1000);
+      showNotification('🎓 학습 시작! 진행상황은 패널에서 실시간 확인', { duration: 3000 });
+      // 폴링이 자동으로 UI 업데이트
+      if (typeof refreshBotPanel === 'function') refreshBotPanel();
     }
   } catch(e) {
-    showNotification('❌ 통신 실패: ' + e.message + ' (서버 재시작 중일 수 있음)', { duration: 5000 });
+    showNotification('❌ 통신 실패: ' + e.message, { duration: 4000 });
   }
 };
 
