@@ -16125,8 +16125,31 @@ let _botLoggingEnabled = false;
 let _botLastAction = 'idle';
 let _botLastActionTs = 0;
 let _botLogInterval = null;
-let bots = [];              // 로컬 봇들 { id, name, x, y, vx, vy, hp, maxHp, dir, target, lastPredictTs }
+let bots = [];
 let _botPredictInterval = null;
+let _botAutoSpawnInterval = null;
+
+// ═══ 봇 전역 설정 (관리자가 조정) ═══
+window.botConfig = {
+  autoSpawn: false,       // 자동 스폰 on/off
+  targetOnline: 5,        // 목표 온라인 유저 수 (부족하면 봇 채움)
+  maxBots: 8,             // 최대 봇 수
+  personality: 'balanced',// aggressive | balanced | peaceful | miner
+  pvpEnabled: true,       // 봇이 플레이어 공격 가능
+  weaponPool: ['random'], // 무기 풀 (random = 랜덤)
+  namePool: 'random',     // random | ko | en
+  autoUpgrade: true,      // 자원 모아서 무기 업그레이드
+};
+
+// ═══ 무기 풀 (약함 → 강함) ═══
+const BOT_WEAPONS_MELEE = ['wooden_sword', 'stone_sword', 'iron_sword', 'gold_sword', 'diamond_sword'];
+const BOT_WEAPONS_RANGED = ['bow', 'crossbow'];
+const BOT_WEAPONS_MAGIC = ['staff', 'fire_staff', 'ice_staff'];
+const BOT_WEAPONS_ALL = [...BOT_WEAPONS_MELEE, ...BOT_WEAPONS_RANGED, ...BOT_WEAPONS_MAGIC];
+
+// ═══ 이름 풀 ═══
+const BOT_NAMES_KO = ['용사왕', '픽셀킹', '전사님', '검사', '마법사', '초보자', '기사님', '용사', '방랑자', '싸움꾼', '농부', '광부', '사냥꾼', '탐험가'];
+const BOT_NAMES_EN = ['Shadow', 'Blade', 'Storm', 'Hunter', 'Rogue', 'Knight', 'Mage', 'Ranger', 'Warrior', 'Titan'];
 
 // ─── 유저 액션 감지 (이벤트 훅으로 마지막 액션 기록) ───
 function _recordBotAction(action, target) {
@@ -16198,53 +16221,108 @@ window.stopBotLogging = function() {
   showNotification('📝 로깅 중지', { duration: 1500 });
 };
 
-// ─── 봇 스폰 (플레이어 완전 복제) ───
+// ─── 봇 스폰 (플레이어 완전 복제 + 무기/성격 다양) ───
 window.spawnLearningBot = async function(count) {
-  count = Math.max(1, Math.min(5, count || 1));
-  // ─── 모델 로드 여부 체크 (없으면 스폰 거부) ───
+  count = Math.max(1, Math.min(10, count || 1));
   try {
     const health = await fetch(BOT_SERVER_URL + '/', { method: 'GET' }).then(r => r.json());
     if (!health.modelLoaded) {
-      showNotification('❌ 학습된 모델 없음! 먼저 학습을 완료하세요', { duration: 4000 });
+      showNotification('❌ 학습된 모델 없음! 먼저 학습 완료', { duration: 4000 });
       return;
     }
   } catch(e) {
     showNotification('❌ 봇 서버 연결 실패', { duration: 3000 });
     return;
   }
-  // 봇 이름 후보 (평범한 유저처럼)
-  const nameCandidates = ['용사왕', '픽셀킹', '전사님', '아처', '검사', '마법사', '초보자', '어쌔신', '기사님', '용사'];
+  const cfg = window.botConfig || {};
   for (let i = 0; i < count; i++) {
-    const bx = (player ? player.x : WORLD_W * TILE / 2) + (Math.random() - 0.5) * 300;
+    if (bots.filter(b => b.hp > 0).length >= (cfg.maxBots || 8)) {
+      showNotification(`⚠️ 최대 봇 수 도달 (${cfg.maxBots})`, { duration: 2000 });
+      break;
+    }
+    const bx = (player ? player.x : WORLD_W * TILE / 2) + (Math.random() - 0.5) * 400;
     const by = (player ? player.y : 200) - 50;
-    const nick = nameCandidates[Math.floor(Math.random() * nameCandidates.length)] + Math.floor(Math.random() * 99);
+    // 이름
+    const namePool = cfg.namePool === 'ko' ? BOT_NAMES_KO
+                   : cfg.namePool === 'en' ? BOT_NAMES_EN
+                   : [...BOT_NAMES_KO, ...BOT_NAMES_EN];
+    const nick = namePool[Math.floor(Math.random() * namePool.length)] + Math.floor(Math.random() * 99);
+    // 무기
+    let weapon;
+    if (cfg.weaponPool.includes('random')) {
+      weapon = BOT_WEAPONS_ALL[Math.floor(Math.random() * BOT_WEAPONS_ALL.length)];
+    } else {
+      weapon = cfg.weaponPool[Math.floor(Math.random() * cfg.weaponPool.length)];
+    }
+    // 성격
+    const personalities = ['aggressive', 'balanced', 'peaceful', 'miner'];
+    const personality = cfg.personality === 'random'
+      ? personalities[Math.floor(Math.random() * personalities.length)]
+      : (cfg.personality || 'balanced');
+
     bots.push({
-      // 플레이어와 동일한 스키마
       id: 'bot_' + Date.now() + '_' + i,
       name: nick,
       x: bx, y: by, vx: 0, vy: 0, w: 24, h: 32,
       hp: 100, maxHp: 100, mp: 50, maxMp: 50,
-      atk: 5, def_stat: 2,
-      level: 1 + Math.floor(Math.random() * 20),
-      gold: 100,
+      atk: 5 + Math.floor(Math.random() * 8),
+      def_stat: 2,
+      level: 1 + Math.floor(Math.random() * 30),
+      gold: 100 + Math.floor(Math.random() * 500),
       dir: Math.random() > 0.5 ? 1 : -1,
       attacking: false, attackTimer: 0,
-      walkFrame: 0,
-      onGround: false, jumping: false,
-      // 장비 (기본)
-      hotbar: ['wooden_sword', null, null, null, null, null, null, null, null],
+      walkFrame: 0, onGround: false, jumping: false,
+      hotbar: [weapon, null, null, null, null, null, null, null, null],
       equipment: {},
-      costume: { hair: Math.floor(Math.random()*3), outfit: Math.floor(Math.random()*3), accessory: 0 },
-      inventory: [{ id: 'wooden_sword', count: 1 }],
-      // 봇 전용 필드
+      costume: {
+        hair: Math.floor(Math.random()*3),
+        outfit: Math.floor(Math.random()*3),
+        accessory: 0,
+      },
+      inventory: [
+        { id: weapon, count: 1 },
+        { id: 'apple', count: 3 },
+        // 시작 자원 (봇이 뭐라도 갖고 시작)
+        { id: 'wood', count: 5 },
+      ],
       isBot: true,
+      // 봇 전용
+      personality,
+      pvpEnabled: cfg.pvpEnabled !== false,
+      autoUpgrade: cfg.autoUpgrade !== false,
       currentAction: 'idle',
       actionTimer: 60,
+      target: null,          // 현재 타겟 (플레이어 or 몹)
+      targetType: null,      // 'player' | 'mob' | 'block'
+      lastCraftTs: 0,        // 마지막 제작 시간
+      lastPvpTs: 0,          // 마지막 PVP 공격
     });
   }
-  showNotification('🤖 봇 ' + count + '마리 (모델 기반)', { duration: 2000 });
+  showNotification(`🤖 봇 ${count}마리 스폰됨 (성격/무기 다양)`, { duration: 2000 });
   if (!_botPredictInterval) startBotAI();
 };
+
+// ═══ 자동 스폰: 온라인 유저가 적으면 봇 채움 ═══
+function tryAutoSpawn() {
+  const cfg = window.botConfig || {};
+  if (!cfg.autoSpawn) return;
+  const online = Object.keys(otherPlayers || {}).length + 1; // 나 포함
+  const aliveBots = bots.filter(b => b.hp > 0).length;
+  const need = (cfg.targetOnline || 5) - online;
+  if (need <= 0) return;
+  if (aliveBots >= (cfg.maxBots || 8)) return;
+  const spawn = Math.min(need, (cfg.maxBots || 8) - aliveBots);
+  if (spawn > 0) window.spawnLearningBot(spawn);
+}
+function startAutoSpawn() {
+  if (_botAutoSpawnInterval) return;
+  _botAutoSpawnInterval = setInterval(tryAutoSpawn, 15000); // 15초마다 체크
+}
+function stopAutoSpawn() {
+  if (_botAutoSpawnInterval) { clearInterval(_botAutoSpawnInterval); _botAutoSpawnInterval = null; }
+}
+window.startAutoSpawn = startAutoSpawn;
+window.stopAutoSpawn = stopAutoSpawn;
 
 // ─── 봇 AI 루프 (1.5초마다 예측 API 호출, 모델 필수) ───
 function startBotAI() {
@@ -16366,6 +16444,121 @@ function botUseItem(bot) {
   return false;
 }
 
+// 🗡️ 봇 → 플레이어/다른 봇 PVP 공격
+function botTryPvpAttack(bot) {
+  if (!bot.pvpEnabled) return false;
+  const now = Date.now();
+  if (now - (bot.lastPvpTs || 0) < 800) return false; // 공격 쿨다운
+  // 성격별 판단
+  if (bot.personality === 'peaceful') return false;
+  if (bot.personality === 'miner' && Math.random() > 0.2) return false; // 광부는 잘 안 싸움
+
+  const currentWeapon = bot.hotbar ? bot.hotbar[0] : null;
+  const weaponInfo = currentWeapon ? ITEMS[currentWeapon] : null;
+  const range = (weaponInfo?.range || 1) * TILE * 1.5;
+  const atkDmg = bot.atk + (weaponInfo?.atk || 0);
+
+  // 타겟 후보: 실제 플레이어 + 다른 봇
+  const bcx = bot.x + bot.w/2, bcy = bot.y + bot.h/2;
+  let target = null, dist = 999999;
+
+  // 진짜 플레이어 감지
+  if (player && player.hp > 0) {
+    const d = Math.hypot(player.x - bot.x, player.y - bot.y);
+    if (d < range) { target = player; dist = d; target._isMainPlayer = true; }
+  }
+  // 다른 유저 (otherPlayers)
+  for (const k in (otherPlayers || {})) {
+    const op = otherPlayers[k]; if (!op) continue;
+    const d = Math.hypot(op.x - bot.x, op.y - bot.y);
+    if (d < dist && d < range) { target = op; dist = d; target._isMainPlayer = false; }
+  }
+  // 다른 봇 (공격적 성격만 팀킬)
+  if (bot.personality === 'aggressive') {
+    for (const other of bots) {
+      if (other === bot || other.hp <= 0) continue;
+      const d = Math.hypot(other.x - bot.x, other.y - bot.y);
+      if (d < dist && d < range) { target = other; dist = d; target._isBot = true; }
+    }
+  }
+
+  if (!target) return false;
+
+  bot.lastPvpTs = now;
+  bot.attacking = true; bot.attackTimer = 12;
+  // 봇 방향을 타겟 쪽으로
+  bot.dir = target.x > bot.x ? 1 : -1;
+
+  // 원거리 무기면 화살 발사, 근접이면 즉시 데미지
+  if (BOT_WEAPONS_RANGED.includes(currentWeapon)) {
+    // 화살 (projectiles 배열 사용)
+    if (typeof projectiles !== 'undefined') {
+      projectiles.push({
+        x: bcx, y: bcy,
+        vx: bot.dir * 8, vy: -1,
+        life: 60, damage: atkDmg,
+        owner: bot.name, type: 'arrow', color: '#dd8844',
+      });
+    }
+    if (typeof spawnDamageNumber === 'function') spawnDamageNumber(bcx, bcy - 10, '🏹', '#dd8844');
+  } else if (BOT_WEAPONS_MAGIC.includes(currentWeapon)) {
+    // 마법 (즉시 데미지)
+    if (target === player) {
+      if (typeof damagePlayerByAttack === 'function') damagePlayerByAttack(atkDmg);
+    } else if (target._isBot) {
+      target.hp -= atkDmg;
+    }
+    if (typeof spawnDamageNumber === 'function') spawnDamageNumber(target.x, target.y - 10, '✨' + atkDmg, '#aa88ff');
+  } else {
+    // 근접
+    if (target === player) {
+      if (typeof damagePlayerByAttack === 'function') damagePlayerByAttack(atkDmg);
+    } else if (target._isBot) {
+      target.hp -= atkDmg;
+    }
+    if (typeof spawnDamageNumber === 'function') spawnDamageNumber(target.x, target.y - 10, '⚔️' + atkDmg, '#ff6666');
+  }
+  return true;
+}
+
+// 🔨 봇 제작: 자원 모이면 무기 업그레이드
+function botTryCraft(bot) {
+  if (!bot.autoUpgrade || !bot.inventory) return false;
+  const now = Date.now();
+  if (now - (bot.lastCraftTs || 0) < 10000) return false; // 10초 쿨다운
+  bot.lastCraftTs = now;
+
+  // 현재 무기 → 다음 티어 확인
+  const currentWeapon = bot.hotbar[0];
+  const idx = BOT_WEAPONS_MELEE.indexOf(currentWeapon);
+  if (idx < 0 || idx >= BOT_WEAPONS_MELEE.length - 1) return false;
+  const nextWeapon = BOT_WEAPONS_MELEE[idx + 1];
+  const recipe = (typeof RECIPES !== 'undefined') ? RECIPES.find(r => r.result === nextWeapon) : null;
+  if (!recipe) return false;
+
+  // 재료 있는지 확인
+  const hasMaterials = Object.entries(recipe.ingredients).every(([id, count]) => {
+    const slot = bot.inventory.find(s => s && s.id === id);
+    return slot && slot.count >= count;
+  });
+  if (!hasMaterials) return false;
+
+  // 재료 소모
+  for (const [id, count] of Object.entries(recipe.ingredients)) {
+    const slot = bot.inventory.find(s => s && s.id === id);
+    slot.count -= count;
+    if (slot.count <= 0) bot.inventory.splice(bot.inventory.indexOf(slot), 1);
+  }
+  // 새 무기 획득
+  botAddItem(bot, nextWeapon, 1);
+  bot.hotbar[0] = nextWeapon;
+  // 알림 (관리자에게만)
+  if (isAdmin() && typeof showNotification === 'function') {
+    showNotification(`🔨 ${bot.name} 무기 업그레이드: ${ITEMS[nextWeapon]?.name || nextWeapon}`, { duration: 2500 });
+  }
+  return true;
+}
+
 // 봇 리스폰
 function botRespawn(bot) {
   bot.hp = bot.maxHp;
@@ -16391,6 +16584,10 @@ function updateBots() {
 
     // 자동 힐 (HP 낮으면 상시 시도)
     if (b.hp < b.maxHp * 0.5 && Math.random() < 0.01) botUseItem(b);
+    // 🗡️ PVP 자동 시도 (매초에 한 번)
+    if (Math.random() < 0.02) botTryPvpAttack(b);
+    // 🔨 제작 자동 시도 (10초 쿨다운 내장)
+    if (Math.random() < 0.005) botTryCraft(b);
 
     // 액션 실행
     const speed = 1.8;
@@ -16707,23 +16904,119 @@ async function refreshBotPanel() {
       </div>
     ` : ''}
 
-    <!-- 봇 관리 -->
+    <!-- 봇 관리 & 설정 -->
     <div style="padding:10px; background:rgba(10,14,30,0.6); border:1px solid #1c2244;">
-      <div style="font-size:8px; color:#ffd24a; margin-bottom:8px;">🎮 봇 관리 · 현재 ${bots.filter(b=>b.hp>0).length}마리</div>
-      <div style="display:flex; gap:6px;">
+      <div style="font-size:8px; color:#ffd24a; margin-bottom:8px;">🎮 봇 관리 · 현재 <span style="color:#66ffaa;">${bots.filter(b=>b.hp>0).length}</span> / ${window.botConfig.maxBots}마리</div>
+
+      <!-- 스폰 버튼 -->
+      <div style="display:flex; gap:6px; margin-bottom:10px;">
         <button onclick="spawnLearningBot(1); setTimeout(refreshBotPanel, 500);"
           style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
           background:#0a1a3a; border-top:2px solid #4488cc; border-left:2px solid #4488cc;
           border-bottom:2px solid #051022; border-right:2px solid #051022;
-          color:#88ccff;">+1 봇</button>
+          color:#88ccff;">+1</button>
         <button onclick="spawnLearningBot(3); setTimeout(refreshBotPanel, 500);"
           style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
           background:#0a1a3a; border-top:2px solid #4488cc; border-left:2px solid #4488cc;
           border-bottom:2px solid #051022; border-right:2px solid #051022;
-          color:#88ccff;">+3 봇</button>
+          color:#88ccff;">+3</button>
+        <button onclick="spawnLearningBot(5); setTimeout(refreshBotPanel, 500);"
+          style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
+          background:#0a1a3a; border-top:2px solid #4488cc; border-left:2px solid #4488cc;
+          border-bottom:2px solid #051022; border-right:2px solid #051022;
+          color:#88ccff;">+5</button>
         <button onclick="bots = []; refreshBotPanel();"
           style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
-          background:#200a10; border:2px solid #663; color:#ffaaaa;">💀 전체제거</button>
+          background:#200a10; border:2px solid #663; color:#ffaaaa;">💀 제거</button>
+      </div>
+
+      <!-- 설정 -->
+      <div style="border-top:1px solid #1c2244; padding-top:10px;">
+        <div style="font-size:7px; color:#ffd24a; margin-bottom:6px;">⚙️ 봇 설정</div>
+
+        <!-- 자동 스폰 -->
+        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+          <label style="flex:1; font-size:7px; color:#aab4d0;">자동 스폰 (온라인 부족 시)</label>
+          <button onclick="window.botConfig.autoSpawn=!window.botConfig.autoSpawn; if(window.botConfig.autoSpawn) startAutoSpawn(); else stopAutoSpawn(); refreshBotPanel();"
+            style="font-family:inherit; font-size:7px; padding:4px 10px; cursor:pointer;
+            background:${window.botConfig.autoSpawn?'#0a2a10':'#200a10'};
+            border:2px solid ${window.botConfig.autoSpawn?'#66aa66':'#aa6666'};
+            color:${window.botConfig.autoSpawn?'#88ff88':'#ff8888'};">${window.botConfig.autoSpawn?'ON':'OFF'}</button>
+        </div>
+
+        <!-- 목표 온라인 수 -->
+        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+          <label style="flex:1; font-size:7px; color:#aab4d0;">목표 온라인 수</label>
+          <input type="number" min="1" max="10" value="${window.botConfig.targetOnline}"
+            onchange="window.botConfig.targetOnline=parseInt(this.value)||5"
+            style="width:40px; font-family:inherit; font-size:7px; padding:3px; background:#0a0e1e; border:1px solid #2a3050; color:#88ccff; text-align:center;">
+        </div>
+
+        <!-- 최대 봇 -->
+        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+          <label style="flex:1; font-size:7px; color:#aab4d0;">최대 봇 수</label>
+          <input type="number" min="1" max="20" value="${window.botConfig.maxBots}"
+            onchange="window.botConfig.maxBots=parseInt(this.value)||8"
+            style="width:40px; font-family:inherit; font-size:7px; padding:3px; background:#0a0e1e; border:1px solid #2a3050; color:#88ccff; text-align:center;">
+        </div>
+
+        <!-- 성격 -->
+        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+          <label style="flex:1; font-size:7px; color:#aab4d0;">성격</label>
+          <select onchange="window.botConfig.personality=this.value"
+            style="font-family:inherit; font-size:7px; padding:3px; background:#0a0e1e; border:1px solid #2a3050; color:#88ccff;">
+            <option value="balanced"${window.botConfig.personality==='balanced'?' selected':''}>균형</option>
+            <option value="aggressive"${window.botConfig.personality==='aggressive'?' selected':''}>공격적</option>
+            <option value="peaceful"${window.botConfig.personality==='peaceful'?' selected':''}>평화적</option>
+            <option value="miner"${window.botConfig.personality==='miner'?' selected':''}>광부형</option>
+            <option value="random"${window.botConfig.personality==='random'?' selected':''}>랜덤</option>
+          </select>
+        </div>
+
+        <!-- 이름 풀 -->
+        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+          <label style="flex:1; font-size:7px; color:#aab4d0;">이름 스타일</label>
+          <select onchange="window.botConfig.namePool=this.value"
+            style="font-family:inherit; font-size:7px; padding:3px; background:#0a0e1e; border:1px solid #2a3050; color:#88ccff;">
+            <option value="random"${window.botConfig.namePool==='random'?' selected':''}>혼합</option>
+            <option value="ko"${window.botConfig.namePool==='ko'?' selected':''}>한글</option>
+            <option value="en"${window.botConfig.namePool==='en'?' selected':''}>영어</option>
+          </select>
+        </div>
+
+        <!-- 무기 풀 -->
+        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+          <label style="flex:1; font-size:7px; color:#aab4d0;">무기</label>
+          <select onchange="window.botConfig.weaponPool=[this.value]"
+            style="font-family:inherit; font-size:7px; padding:3px; background:#0a0e1e; border:1px solid #2a3050; color:#88ccff;">
+            <option value="random"${window.botConfig.weaponPool[0]==='random'?' selected':''}>랜덤</option>
+            <option value="wooden_sword">나무검만</option>
+            <option value="iron_sword">철검만</option>
+            <option value="diamond_sword">다이아검만</option>
+            <option value="bow">활만</option>
+            <option value="fire_staff">화염지팡이</option>
+          </select>
+        </div>
+
+        <!-- PVP 스위치 -->
+        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+          <label style="flex:1; font-size:7px; color:#aab4d0;">플레이어 공격 (PVP)</label>
+          <button onclick="window.botConfig.pvpEnabled=!window.botConfig.pvpEnabled; refreshBotPanel();"
+            style="font-family:inherit; font-size:7px; padding:4px 10px; cursor:pointer;
+            background:${window.botConfig.pvpEnabled?'#2a1010':'#0a1a1a'};
+            border:2px solid ${window.botConfig.pvpEnabled?'#aa4444':'#446666'};
+            color:${window.botConfig.pvpEnabled?'#ff8888':'#88ccaa'};">${window.botConfig.pvpEnabled?'⚔️ ON':'🕊️ OFF'}</button>
+        </div>
+
+        <!-- 자동 업그레이드 -->
+        <div style="display:flex; align-items:center; gap:6px;">
+          <label style="flex:1; font-size:7px; color:#aab4d0;">자원 모아 무기 업그레이드</label>
+          <button onclick="window.botConfig.autoUpgrade=!window.botConfig.autoUpgrade; refreshBotPanel();"
+            style="font-family:inherit; font-size:7px; padding:4px 10px; cursor:pointer;
+            background:${window.botConfig.autoUpgrade?'#0a2a10':'#200a10'};
+            border:2px solid ${window.botConfig.autoUpgrade?'#66aa66':'#aa6666'};
+            color:${window.botConfig.autoUpgrade?'#88ff88':'#ff8888'};">${window.botConfig.autoUpgrade?'ON':'OFF'}</button>
+        </div>
       </div>
     </div>
     <style>@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }</style>
