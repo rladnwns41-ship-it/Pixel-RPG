@@ -486,7 +486,7 @@ app.use((req, res, next) => {
     "font-src 'self' https://fonts.gstatic.com data:; " +
     "img-src 'self' data: blob:; " +
     "media-src 'self' data: blob:; " +
-    "connect-src 'self' ws: wss: https://*.firebaseio.com https://*.googleapis.com https://api.groq.com; " +
+    "connect-src 'self' ws: wss: https://*.firebaseio.com https://*.googleapis.com https://api.groq.com https://*.onrender.com https://*.supabase.co; " +
     "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'");
   next();
 });
@@ -515,14 +515,6 @@ app.post('/save', express.json({ limit: '256kb' }), async (req, res) => {
     const r = await handleSave(uid, b.data || {});
     return res.json(r);
   } catch (e) { return res.json({ error: 'server_error' }); }
-});
-// 🤖 봇 서버 토큰: 로그인된 관리자만 BOT_SERVER_TOKEN 반환
-app.get('/bot-token', (req, res) => {
-  const uid = tokenUser(req.headers['x-token'] || '');
-  if (!uid || !ADMIN_IDS.has(uid)) return res.status(403).json({ error: 'forbidden' });
-  const t = process.env.BOT_SERVER_TOKEN || '';
-  if (!t) return res.status(500).json({ error: 'BOT_SERVER_TOKEN 환경변수 미설정' });
-  return res.json({ ok: true, token: t });
 });
 // 🤖 Groq 작동 확인: /groq-test 열면 키 설정·응답 여부를 JSON으로 보여줌
 app.get('/groq-test', async (req, res) => {
