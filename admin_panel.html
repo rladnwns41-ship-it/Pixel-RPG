@@ -16197,35 +16197,60 @@ window.stopBotLogging = function() {
   showNotification('📝 로깅 중지', { duration: 1500 });
 };
 
-// ─── 봇 스폰 ───
-window.spawnLearningBot = function(count) {
+// ─── 봇 스폰 (플레이어 완전 복제) ───
+window.spawnLearningBot = async function(count) {
   count = Math.max(1, Math.min(5, count || 1));
-  const initialActions = ['move_left', 'move_right', 'jump', 'idle'];
+  // ─── 모델 로드 여부 체크 (없으면 스폰 거부) ───
+  try {
+    const health = await fetch(BOT_SERVER_URL + '/', { method: 'GET' }).then(r => r.json());
+    if (!health.modelLoaded) {
+      showNotification('❌ 학습된 모델 없음! 먼저 학습을 완료하세요', { duration: 4000 });
+      return;
+    }
+  } catch(e) {
+    showNotification('❌ 봇 서버 연결 실패', { duration: 3000 });
+    return;
+  }
+  // 봇 이름 후보 (평범한 유저처럼)
+  const nameCandidates = ['용사왕', '픽셀킹', '전사님', '아처', '검사', '마법사', '초보자', '어쌔신', '기사님', '용사'];
   for (let i = 0; i < count; i++) {
-    const bx = (player ? player.x : WORLD_W * TILE / 2) + (Math.random() - 0.5) * 200;
+    const bx = (player ? player.x : WORLD_W * TILE / 2) + (Math.random() - 0.5) * 300;
     const by = (player ? player.y : 200) - 50;
+    const nick = nameCandidates[Math.floor(Math.random() * nameCandidates.length)] + Math.floor(Math.random() * 99);
     bots.push({
+      // 플레이어와 동일한 스키마
       id: 'bot_' + Date.now() + '_' + i,
-      name: '봇' + Math.floor(Math.random() * 999),
-      x: bx, y: by, vx: 0, vy: 0,
-      w: 24, h: 32, hp: 100, maxHp: 100, dir: 1,
-      lastPredictTs: 0,
-      currentAction: initialActions[Math.floor(Math.random() * initialActions.length)],
-      actionTimer: 120,  // 초기 액션 실행 (2초)
-      onGround: false,
+      name: nick,
+      x: bx, y: by, vx: 0, vy: 0, w: 24, h: 32,
+      hp: 100, maxHp: 100, mp: 50, maxMp: 50,
+      atk: 5, def_stat: 2,
+      level: 1 + Math.floor(Math.random() * 20),
+      gold: 100,
+      dir: Math.random() > 0.5 ? 1 : -1,
+      attacking: false, attackTimer: 0,
+      walkFrame: 0,
+      onGround: false, jumping: false,
+      // 장비 (기본)
+      hotbar: ['wooden_sword', null, null, null, null, null, null, null, null],
+      equipment: {},
+      costume: { hair: Math.floor(Math.random()*3), outfit: Math.floor(Math.random()*3), accessory: 0 },
+      inventory: [{ id: 'wooden_sword', count: 1 }],
+      // 봇 전용 필드
+      isBot: true,
+      currentAction: 'idle',
+      actionTimer: 60,
     });
   }
-  showNotification('🤖 봇 ' + count + '마리 스폰됨', { duration: 2000 });
+  showNotification('🤖 봇 ' + count + '마리 (모델 기반)', { duration: 2000 });
   if (!_botPredictInterval) startBotAI();
 };
 
-// ─── 봇 AI 루프 (1.5초마다 예측 API 호출) ───
+// ─── 봇 AI 루프 (1.5초마다 예측 API 호출, 모델 필수) ───
 function startBotAI() {
   _botPredictInterval = setInterval(async () => {
     if (bots.length === 0) return;
     for (const b of bots) {
       if (b.hp <= 0) continue;
-      // 예측 API 호출
       try {
         const state = _getBotState(b);
         const r = await fetch(BOT_SERVER_URL + '/predict', {
@@ -16234,46 +16259,39 @@ function startBotAI() {
           body: JSON.stringify({ state }),
         });
         const j = await r.json();
+        // reason이 'random_no_model'이면 모델 사라진 것 → 봇 정지
+        if (j && j.reason === 'random_no_model') { b.currentAction = 'idle'; continue; }
         if (j && j.action) {
           b.currentAction = j.action;
           b.actionTimer = 90;
         }
-      } catch(e) {
-        // 통신 실패 → 랜덤 액션 (봇이 그래도 움직이게)
-        const acts = ['move_left', 'move_right', 'jump', 'idle'];
-        b.currentAction = acts[Math.floor(Math.random() * acts.length)];
-        b.actionTimer = 90;
-      }
+      } catch(e) { b.currentAction = 'idle'; }
     }
   }, 1500);
 }
 
-// ─── 봇 물리 업데이트 (매 프레임) ───
+// ─── 봇 물리 업데이트 (매 프레임, 플레이어와 동일) ───
 function updateBots() {
   if (bots.length === 0) return;
   const g = 0.55;
   for (const b of bots) {
     if (b.hp <= 0) continue;
     if (b.actionTimer > 0) b.actionTimer--;
-    else {
-      // 액션 시간 초과 → 잠깐 idle
-      b.currentAction = 'idle';
-    }
+    else b.currentAction = 'idle';
+
     // 액션 실행
     const speed = 1.8;
     switch (b.currentAction) {
-      case 'move_left':
-      case 'flee_left':
-        b.vx = -speed; b.dir = -1; break;
-      case 'move_right':
-      case 'flee_right':
-        b.vx = speed; b.dir = 1; break;
+      case 'move_left': case 'flee_left':
+        b.vx = -speed; b.dir = -1; b.walkFrame++; break;
+      case 'move_right': case 'flee_right':
+        b.vx = speed; b.dir = 1; b.walkFrame++; break;
       case 'jump':
-        if (b.onGround) { b.vy = -9; b.onGround = false; }
+        if (b.onGround) { b.vy = -9; b.onGround = false; b.jumping = true; }
         break;
       case 'attack':
       case 'mine':
-        // 근처 몹 공격
+        b.attacking = true; b.attackTimer = 12;
         for (const a of (animals || [])) {
           if (a.dead) continue;
           if (Math.hypot(a.x - b.x, a.y - b.y) < TILE * 2) {
@@ -16284,35 +16302,33 @@ function updateBots() {
         }
         b.vx *= 0.5;
         break;
-      case 'idle':
-      default:
+      case 'idle': default:
         b.vx *= 0.7; break;
     }
-    // 중력 (심해에선 안 적용)
+    if (b.attackTimer > 0) { b.attackTimer--; if (b.attackTimer <= 0) b.attacking = false; }
+
+    // 중력
     if (!oceanMode) b.vy = Math.min(12, b.vy + g);
 
-    // ── 정확한 벽/지면 충돌 (world는 [x][y] 순서) ──
+    // ── 벽/지면 충돌 (world는 [x][y]) ──
     function solidAt(px, py) {
       const tx = Math.floor(px / TILE);
       const ty = Math.floor(py / TILE);
       if (tx < 0 || tx >= WORLD_W || ty < 0 || ty >= WORLD_H) return true;
       const t = world[tx] && world[tx][ty];
-      // 숫자면 지상 타일, 객체면 심해 자원, null이면 통과
       if (t === undefined || t === null) return false;
       if (typeof t === 'number') return t !== TILES.AIR && t !== TILES.WATER;
-      if (typeof t === 'object') return !!t.type;   // 심해 자원
+      if (typeof t === 'object') return !!t.type;
       return false;
     }
 
-    // Y 이동 (중력 → 지면 감지)
+    // Y 이동
     let newY = b.y + b.vy;
     const footY = newY + b.h;
     if (b.vy > 0 && (solidAt(b.x + 4, footY) || solidAt(b.x + b.w - 4, footY))) {
-      // 지면 위에 안착
       newY = Math.floor(footY / TILE) * TILE - b.h;
-      b.vy = 0; b.onGround = true;
+      b.vy = 0; b.onGround = true; b.jumping = false;
     } else if (b.vy < 0 && (solidAt(b.x + 4, newY) || solidAt(b.x + b.w - 4, newY))) {
-      // 천장에 부딪힘
       b.vy = 0; newY = b.y;
     } else {
       b.onGround = false;
@@ -16324,11 +16340,9 @@ function updateBots() {
     const midY = b.y + b.h / 2;
     const edgeX = b.vx > 0 ? newX + b.w : newX;
     if (Math.abs(b.vx) > 0.1 && (solidAt(edgeX, midY) || solidAt(edgeX, b.y + 4))) {
-      // 벽 → 방향 반전 (다음 예측 전까지 갈아탐)
       b.vx = 0;
       b.currentAction = b.currentAction === 'move_left' ? 'move_right' :
                         b.currentAction === 'move_right' ? 'move_left' : 'jump';
-      // 즉시 점프해서 벽 넘어보기
       if (b.onGround) { b.vy = -8; b.onGround = false; }
     } else {
       b.x = newX;
@@ -16337,45 +16351,22 @@ function updateBots() {
     // 월드 경계
     if (b.x < 0) { b.x = 0; b.currentAction = 'move_right'; }
     if (b.x > WORLD_W * TILE - b.w) { b.x = WORLD_W * TILE - b.w; b.currentAction = 'move_left'; }
-    if (b.y > WORLD_H * TILE) { b.y = 100; b.vy = 0; }   // 떨어지면 리스폰
+    if (b.y > WORLD_H * TILE) { b.y = 100; b.vy = 0; }
   }
 }
 
-// ─── 봇 렌더 (파란색 픽셀 캐릭터) ───
+// ─── 봇 렌더 (drawPlayer 재활용해서 진짜 유저처럼 보이게) ───
 function drawBots() {
   if (bots.length === 0 || !ctx) return;
   for (const b of bots) {
     if (b.hp <= 0) continue;
-    const sx = b.x - camera.x, sy = b.y - camera.y;
+    const sx = b.x - camera.x;
     if (sx < -50 || sx > canvas.width + 50) continue;
-    ctx.save();
-    ctx.imageSmoothingEnabled = false;
-    // 그림자
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.beginPath(); ctx.ellipse(sx + 12, sy + 33, 10, 3, 0, 0, Math.PI*2); ctx.fill();
-    const px = 3;
-    function pix(dx, dy, w, h, col) { ctx.fillStyle = col; ctx.fillRect(sx + dx*px, sy + dy*px, w*px, h*px); }
-    // 몸(파란 로봇)
-    pix(2, 4, 4, 5, '#3a5a8a');
-    pix(1, 5, 1, 3, '#3a5a8a');
-    pix(6, 5, 1, 3, '#3a5a8a');
-    // 안테나
-    pix(3, 0, 2, 2, '#4a6a9a');
-    pix(3, 0, 1, 1, '#ff4466');   // 빨간 LED
-    // 머리
-    pix(2, 2, 4, 3, '#5a7aaa');
-    // 눈 (초록)
-    pix(3, 3, 1, 1, '#66ff88');
-    pix(4, 3, 1, 1, '#66ff88');
-    // 다리
-    pix(3, 9, 1, 2, '#2a4a7a');
-    pix(4, 9, 1, 2, '#2a4a7a');
-    // 이름 태그
-    ctx.font = 'bold 8px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#000'; ctx.fillText('🤖 ' + b.name, sx + 12 + 1, sy - 8 + 1);
-    ctx.fillStyle = '#88ccff'; ctx.fillText('🤖 ' + b.name, sx + 12, sy - 8);
-    ctx.restore();
+    // drawPlayer(bot, isOther=true) 호출 → 다른 플레이어랑 완전 같은 스프라이트
+    if (typeof drawPlayer === 'function') {
+      try { drawPlayer(b, true); }
+      catch(e) { /* fallback: 이름만 표시 */ }
+    }
   }
 }
 
