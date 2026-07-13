@@ -14990,7 +14990,10 @@ function tryEnterOcean() {
   world = generateOceanWorld();
   farmPlots = []; droppedItems = []; animals = [];
   dungeonBuildings = []; corpseBoxes = []; placedChests = []; parkedVehicles = []; otherPlayers = {};
-  player.x = 10 * TILE; player.y = 10 * TILE; player.vx = 0; player.vy = 0;
+  // 심해 진입 위치: 화면 중앙 상단 (수면 근처)
+  player.x = Math.floor(WORLD_W / 2) * TILE;
+  player.y = 5 * TILE;
+  player.vx = 0; player.vy = 0;
   // 🔒 낙사 판정 리셋 (심해 이동 후 즉시 낙사 방지)
   fallStartY = null;
   player.onGround = true;
@@ -16240,8 +16243,17 @@ window.spawnLearningBot = async function(count) {
       showNotification(`⚠️ 최대 봇 수 도달 (${cfg.maxBots})`, { duration: 2000 });
       break;
     }
-    const bx = (player ? player.x : WORLD_W * TILE / 2) + (Math.random() - 0.5) * 400;
-    const by = (player ? player.y : 200) - 50;
+    // ── 지면 위에 정확히 배치 (raycast로 첫 지면 찾기) ──
+    const bx = Math.floor(((player ? player.x : WORLD_W * TILE / 2) + (Math.random() - 0.5) * 400) / TILE);
+    let by = 0;
+    // 위에서부터 아래로 스캔해서 첫 solid 타일 위에 배치
+    for (let sy = 0; sy < WORLD_H - 5; sy++) {
+      const t = world[bx] && world[bx][sy];
+      if (typeof t === 'number' && t !== TILES.AIR && t !== TILES.WATER) {
+        by = sy - 2; break; // 지면 위 2칸에 배치
+      }
+    }
+    if (by === 0) by = Math.floor(WORLD_H * 0.4); // 못 찾으면 중간
     // 이름
     const namePool = cfg.namePool === 'ko' ? BOT_NAMES_KO
                    : cfg.namePool === 'en' ? BOT_NAMES_EN
@@ -16263,7 +16275,7 @@ window.spawnLearningBot = async function(count) {
     bots.push({
       id: 'bot_' + Date.now() + '_' + i,
       name: nick,
-      x: bx, y: by, vx: 0, vy: 0, w: 24, h: 32,
+      x: bx * TILE, y: by * TILE, vx: 0, vy: 0, w: 24, h: 32,
       hp: 100, maxHp: 100, mp: 50, maxMp: 50,
       atk: 5 + Math.floor(Math.random() * 8),
       def_stat: 2,
@@ -16684,7 +16696,14 @@ function updateBots() {
     // 월드 경계
     if (b.x < 0) { b.x = 0; b.currentAction = 'move_right'; }
     if (b.x > WORLD_W * TILE - b.w) { b.x = WORLD_W * TILE - b.w; b.currentAction = 'move_left'; }
-    if (b.y > WORLD_H * TILE) botRespawn(b);
+    // 낙사 조기 감지 (맵 90% 이하로 떨어지거나 300 프레임 이상 낙하 중이면 리스폰)
+    if (b.y > WORLD_H * TILE * 0.9) botRespawn(b);
+    if (!b.onGround) {
+      b._fallFrames = (b._fallFrames || 0) + 1;
+      if (b._fallFrames > 300) botRespawn(b);
+    } else {
+      b._fallFrames = 0;
+    }
   }
 }
 
@@ -16695,13 +16714,39 @@ function drawBots() {
     if (b.hp <= 0) continue;
     const sx = b.x - camera.x;
     if (sx < -50 || sx > canvas.width + 50) continue;
-    // drawPlayer(bot, isOther=true) 호출 → 다른 플레이어랑 완전 같은 스프라이트
     if (typeof drawPlayer === 'function') {
       try { drawPlayer(b, true); }
-      catch(e) { /* fallback: 이름만 표시 */ }
+      catch(e) { /* fallback */ }
     }
   }
 }
+
+// ─── 봇 상태 브로드캐스트 (다른 유저에게 봇이 실제 플레이어처럼 보이게) ───
+let _lastBotBroadcastTs = 0;
+function broadcastBots() {
+  if (isOffline || !supabase || !supabase.broadcast) return;
+  const now = Date.now();
+  if (now - _lastBotBroadcastTs < 200) return;
+  _lastBotBroadcastTs = now;
+  for (const b of bots) {
+    if (b.hp <= 0) continue;
+    try {
+      supabase.broadcast('player_update', {
+        id: b.name, name: b.name,
+        x: Math.round(b.x), y: Math.round(b.y),
+        vx: b.vx || 0, walkFrame: b.walkFrame || 0,
+        dir: b.dir, hp: b.hp, maxHp: b.maxHp,
+        attacking: !!b.attacking, onGround: !!b.onGround,
+        inDungeon: false, isGhost: false, isFlying: false,
+        level: b.level, costume: b.costume,
+        heldItem: b.hotbar ? b.hotbar[0] : null,
+        equipment: b.equipment,
+        _isBot: true,
+      });
+    } catch(e) {}
+  }
+}
+window.broadcastBots = broadcastBots;
 
 // ─── 봇 관리자 패널 ───
 let _botPanelPollInterval = null;
@@ -23091,6 +23136,7 @@ function gameLoop(timestamp) {
   if (typeof updateOcean === 'function') updateOcean();
   if (typeof checkOceanEntryPrompt === 'function') checkOceanEntryPrompt();
   if (typeof updateBots === 'function') updateBots();
+  if (typeof broadcastBots === 'function') broadcastBots();
   // 저사양 모드: 물/낮밤 갱신을 격프레임으로 (시각 차이 거의 없음, CPU 절약)
   if (!_perfLow || frameCount % 2 === 0) { updateDayNight(); updateWater(); }
   updateWeather();
@@ -24771,6 +24817,33 @@ window.startGame = function (userData) {
       else if (cnt > 0) console.log('[아레나] 이탈 기록:', cnt, '회 (3회부터 페널티)');
     }).catch(()=>{});
   }, 2000);
+  // ─── 🤖 관리자 로그인 시 자동 봇 학습 트리거 (하루 1번) ───
+  setTimeout(async () => {
+    if (!isAdmin || !isAdmin()) return;
+    const lastAutoTrain = parseInt(localStorage.getItem('_botLastAutoTrain') || '0');
+    if (Date.now() - lastAutoTrain < 24 * 60 * 60 * 1000) return; // 24시간 쿨다운
+    try {
+      const health = await fetch(BOT_SERVER_URL + '/', { method: 'GET' }).then(r => r.json()).catch(() => null);
+      if (!health || !health.ok) return;
+      const stats = await fetch(BOT_SERVER_URL + '/stats').then(r => r.json()).catch(() => null);
+      if (!stats || (stats.total || 0) < 100) return; // 100개 미만이면 스킵
+      const trainStatus = await fetch(BOT_SERVER_URL + '/train/status').then(r => r.json()).catch(() => null);
+      if (trainStatus && trainStatus.isTraining) return;
+      // 자동 학습 조건 만족 → 관리자에게 알림 + 자동 학습 시작
+      const token = prompt(`🤖 자동 학습 트리거\n데이터 ${stats.total}개 수집됨. 학습 시작?\nBOT_SERVER_TOKEN 입력 (취소하려면 빈값):`);
+      if (!token) return;
+      const r = await fetch(BOT_SERVER_URL + '/train', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, epochs: 10, limit: 10000 }),
+      });
+      const j = await r.json();
+      if (j.started) {
+        localStorage.setItem('_botLastAutoTrain', String(Date.now()));
+        showNotification('🎓 자동 학습 시작됨', { duration: 3000 });
+      }
+    } catch(e) { console.warn('자동학습 실패:', e.message); }
+  }, 5000);
   // 서버 전환 시 이전 채널에서 완전 이탈 처리
   if (!isOffline && supabase && player) {
     const prevChannel = supabase._channelId;
