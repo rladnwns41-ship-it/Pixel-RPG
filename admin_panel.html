@@ -16772,6 +16772,7 @@ function generateRandomServant() {
     id: 'sv_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
     defaultName: name,
     hp, maxHp: hp, atk, speed, mineSpeed, price,
+    level: 1 + Math.floor(Math.random() * 20),
     // 시각 (랜덤 코스튬)
     costume: {
       hair: Math.floor(Math.random()*3),
@@ -16788,6 +16789,49 @@ function refreshServantShop() {
   for (let i = 0; i < 10; i++) servantShopStock.push(generateRandomServant());
 }
 
+// ─── 하인 미리보기 스프라이트 (픽셀 아트 SVG) ───
+function getServantPixelSVG(sv) {
+  // 코스튬 색상
+  const hairColors = ['#3a2a1a', '#8a5a2a', '#5a2a2a'];
+  const outfitColors = ['#4a5a8a', '#8a5a4a', '#5a8a4a'];
+  const hairColor = hairColors[sv.costume?.hair || 0] || '#3a2a1a';
+  const outfitColor = outfitColors[sv.costume?.outfit || 0] || '#4a5a8a';
+  const skin = '#f4c896';
+  // 픽셀 캐릭터 SVG (12x16 픽셀 그리드, 각 픽셀 4x4)
+  const px = 4;
+  return `<svg viewBox="0 0 48 64" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges" style="width:100%; height:100%;">
+    <!-- 그림자 -->
+    <ellipse cx="24" cy="58" rx="10" ry="2" fill="rgba(0,0,0,0.3)"/>
+    <!-- 머리카락 (뒤통수) -->
+    <rect x="${3*px}" y="${1*px}" width="${6*px}" height="${3*px}" fill="${hairColor}"/>
+    <rect x="${2*px}" y="${2*px}" width="${1*px}" height="${2*px}" fill="${hairColor}"/>
+    <rect x="${9*px}" y="${2*px}" width="${1*px}" height="${2*px}" fill="${hairColor}"/>
+    <!-- 얼굴 -->
+    <rect x="${3*px}" y="${3*px}" width="${6*px}" height="${3*px}" fill="${skin}"/>
+    <!-- 눈 -->
+    <rect x="${4*px}" y="${4*px}" width="${1*px}" height="${1*px}" fill="#000"/>
+    <rect x="${7*px}" y="${4*px}" width="${1*px}" height="${1*px}" fill="#000"/>
+    <!-- 입 -->
+    <rect x="${5*px}" y="${5*px}" width="${2*px}" height="${1*px}" fill="#a05050"/>
+    <!-- 앞머리 -->
+    <rect x="${3*px}" y="${2*px}" width="${6*px}" height="${1*px}" fill="${hairColor}"/>
+    <!-- 몸 (옷) -->
+    <rect x="${3*px}" y="${6*px}" width="${6*px}" height="${5*px}" fill="${outfitColor}"/>
+    <!-- 팔 -->
+    <rect x="${2*px}" y="${7*px}" width="${1*px}" height="${3*px}" fill="${outfitColor}"/>
+    <rect x="${9*px}" y="${7*px}" width="${1*px}" height="${3*px}" fill="${outfitColor}"/>
+    <!-- 손 -->
+    <rect x="${2*px}" y="${10*px}" width="${1*px}" height="${1*px}" fill="${skin}"/>
+    <rect x="${9*px}" y="${10*px}" width="${1*px}" height="${1*px}" fill="${skin}"/>
+    <!-- 다리 -->
+    <rect x="${3*px}" y="${11*px}" width="${2*px}" height="${3*px}" fill="#2a2a3a"/>
+    <rect x="${7*px}" y="${11*px}" width="${2*px}" height="${3*px}" fill="#2a2a3a"/>
+    <!-- 신발 -->
+    <rect x="${3*px}" y="${14*px}" width="${2*px}" height="${1*px}" fill="#1a1a2a"/>
+    <rect x="${7*px}" y="${14*px}" width="${2*px}" height="${1*px}" fill="#1a1a2a"/>
+  </svg>`;
+}
+
 // ─── 하인 상점 UI ───
 window.openServantShop = function() {
   if (servantShopStock.length === 0) refreshServantShop();
@@ -16796,9 +16840,11 @@ window.openServantShop = function() {
   overlay.onmousedown = (e) => { if (e.target === overlay) overlay.remove(); };
   const rows = servantShopStock.map((sv, i) => `
     <div style="display:flex; align-items:center; gap:10px; padding:8px; background:rgba(10,14,30,0.6); border:1px solid #1c2244; margin-bottom:6px;">
-      <div style="font-size:24px;">🧑</div>
+      <div style="width:48px; height:64px; flex-shrink:0; background:linear-gradient(180deg,#1a2040,#0a1020); border:1px solid #2a3050; padding:2px;">
+        ${getServantPixelSVG(sv)}
+      </div>
       <div style="flex:1; font-size:7.5px; line-height:1.8;">
-        <div style="color:#ffdd66; font-size:8.5px; margin-bottom:2px;">${sv.defaultName}</div>
+        <div style="color:#ffdd66; font-size:8.5px; margin-bottom:2px;">${sv.defaultName} <span style="color:#88ccff; font-size:7px;">Lv.${sv.level}</span></div>
         <div style="color:#c8d0ff;">HP <span style="color:#ff8888;">${sv.hp}</span> · 공격 <span style="color:#ffaa66;">${sv.atk}</span></div>
         <div style="color:#c8d0ff;">이동 <span style="color:#88ccff;">×${sv.speed.toFixed(1)}</span> · 채집 <span style="color:#88ff88;">×${sv.mineSpeed.toFixed(1)}</span></div>
       </div>
@@ -16964,13 +17010,21 @@ function drawServants() {
     if (typeof drawPlayer === 'function') {
       try { drawPlayer(s, true); } catch(e) {}
     }
-    // 하인 표시 (이름 위에 왕관)
-    ctx.font = 'bold 10px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
+    // 하인 표시: 픽셀 별 (내 하인 = 금색)
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
     const nx = s.x + s.w/2 - camera.x;
-    const ny = s.y - camera.y - 24;
-    ctx.fillStyle = '#000'; ctx.fillText('👥', nx + 1, ny + 1);
-    ctx.fillStyle = '#ffd24a'; ctx.fillText('👥', nx, ny);
+    const ny = s.y - camera.y - 26;
+    // 픽셀 별 (5x5)
+    ctx.fillStyle = '#000';
+    ctx.fillRect(nx - 3, ny + 3, 3, 1); ctx.fillRect(nx + 1, ny + 3, 3, 1);
+    ctx.fillStyle = '#ffd24a';
+    ctx.fillRect(nx, ny - 3, 1, 3);
+    ctx.fillRect(nx - 3, ny, 7, 1);
+    ctx.fillRect(nx - 2, ny + 1, 5, 1);
+    ctx.fillRect(nx - 2, ny + 2, 2, 2);
+    ctx.fillRect(nx + 1, ny + 2, 2, 2);
+    ctx.restore();
   }
 }
 
@@ -17021,16 +17075,25 @@ function drawOtherServants() {
     if (typeof drawPlayer === 'function') {
       try { drawPlayer(s, true); } catch(e) {}
     }
-    ctx.font = 'bold 10px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
+    // 픽셀 별 (남의 하인 = 분홍)
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
     const nx = s.x + s.w/2 - camera.x;
-    const ny = s.y - camera.y - 24;
-    ctx.fillStyle = '#000'; ctx.fillText('👥', nx + 1, ny + 1);
-    ctx.fillStyle = '#ff88cc'; ctx.fillText('👥', nx, ny); // 남의 하인은 분홍
-    // 소유자 이름 표시
+    const ny = s.y - camera.y - 26;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(nx - 3, ny + 3, 3, 1); ctx.fillRect(nx + 1, ny + 3, 3, 1);
+    ctx.fillStyle = '#ff88cc';
+    ctx.fillRect(nx, ny - 3, 1, 3);
+    ctx.fillRect(nx - 3, ny, 7, 1);
+    ctx.fillRect(nx - 2, ny + 1, 5, 1);
+    ctx.fillRect(nx - 2, ny + 2, 2, 2);
+    ctx.fillRect(nx + 1, ny + 2, 2, 2);
+    ctx.restore();
+    // 소유자 이름
     ctx.font = 'bold 7px "Press Start 2P", monospace';
-    ctx.fillStyle = '#000'; ctx.fillText(s.owner + '의', nx + 1, ny - 12 + 1);
-    ctx.fillStyle = '#8890bb'; ctx.fillText(s.owner + '의', nx, ny - 12);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#000'; ctx.fillText(s.owner + '의', nx + 1, ny - 14 + 1);
+    ctx.fillStyle = '#8890bb'; ctx.fillText(s.owner + '의', nx, ny - 14);
   }
 }
 window.startServantSync = startServantSync;
@@ -22309,7 +22372,13 @@ function sendChat(rawText) {
   if (!text) return;
   // 도움말
   if (text === '/?' || text === '/도움말' || text === '/help') {
-    addChatMessage('도움말', '/팀챗 → 팀 모드 · /전챗 → 전체 모드 · /신고 닉네임 이유 → 신고', '#88FFCC');
+    addChatMessage('도움말', '/팀챗 · /전챗 · /신고 · /하인 (고용소 열기) · /상점 (동일)', '#88FFCC');
+    return;
+  }
+  // ─── 하인 고용소 열기 ───
+  if (text === '/하인' || text === '/상점' || text === '/고용') {
+    if (typeof openServantShop === 'function') openServantShop();
+    else addChatMessage('시스템', '❌ 하인 고용소 기능 없음', '#FF8888');
     return;
   }
   // ─── 신고 명령어: /신고 닉네임 이유 ───
