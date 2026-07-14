@@ -16928,6 +16928,53 @@ window.buyServant = function(idx) {
 };
 
 // ─── 하인 업데이트 (매 프레임: 소유자 따라옴 + 자동 액션) ───
+// ─── 하인이 근처 블록/나무 채집 (채집한 자원은 소유자 인벤으로!) ───
+function servantMineNearby(s) {
+  if (!player) return false;
+  const cx = Math.floor((s.x + s.w/2) / TILE);
+  const cy = Math.floor((s.y + s.h/2) / TILE);
+  const positions = [
+    [cx + s.dir, cy],
+    [cx + s.dir, cy - 1],
+    [cx, cy - 1],
+    [cx, cy + 1],
+    [cx + s.dir, cy + 1],
+  ];
+  for (const [tx, ty] of positions) {
+    if (tx < 0 || tx >= WORLD_W || ty < 0 || ty >= WORLD_H) continue;
+    const tile = world[tx] && world[tx][ty];
+    if (typeof tile !== 'number') continue;
+    if (typeof BOT_MINEABLE_TILES !== 'undefined' && !BOT_MINEABLE_TILES.has(tile)) continue;
+    const dropId = (typeof BOT_TILE_DROPS !== 'undefined') ? BOT_TILE_DROPS[tile] : null;
+    world[tx][ty] = TILES.AIR;
+    _tileLayerDirty = true;
+    if (dropId && typeof addToInventory === 'function') {
+      addToInventory(player, dropId, 1);
+      if (Math.random() < 0.12) {
+        showNotification(`⛏️ ${s.name}: ${ITEMS[dropId]?.name || dropId} +1`, { duration: 1000 });
+      }
+    }
+    try { if (supabase && supabase.broadcast) supabase.broadcast('tile_break', { x: tx, y: ty }); } catch(e) {}
+    return true;
+  }
+  return false;
+}
+
+// ─── 하인이 근처 드롭 아이템 자동 픽업 ───
+function servantPickupNearby(s) {
+  if (!droppedItems || droppedItems.length === 0 || !player) return false;
+  const bcx = s.x + s.w/2, bcy = s.y + s.h/2;
+  for (let i = droppedItems.length - 1; i >= 0; i--) {
+    const d = droppedItems[i];
+    if (Math.hypot(d.x - bcx, d.y - bcy) < TILE * 2.5) {
+      if (typeof addToInventory === 'function') addToInventory(player, d.id, d.count || 1);
+      droppedItems.splice(i, 1);
+      return true;
+    }
+  }
+  return false;
+}
+
 function updateServants() {
   if (servants.length === 0) return;
   const g = 0.55;
@@ -16948,7 +16995,13 @@ function updateServants() {
       // 위에 있으면 점프
       if (dy < -TILE && s.onGround) { s.vy = -8; s.onGround = false; }
     } else {
+      // 소유자 근처 → 채집 모드!
       s.vx *= 0.7;
+      // ⛏️ 자동 채집 (mineSpeed에 비례)
+      const mineChance = 0.04 * (s.mineSpeed || 1);
+      if (Math.random() < mineChance) servantMineNearby(s);
+      // 🎁 자동 픽업
+      if (Math.random() < 0.05) servantPickupNearby(s);
     }
     // 중력
     if (!oceanMode) s.vy = Math.min(12, s.vy + g);
@@ -16978,8 +17031,13 @@ function updateServants() {
     const midY = s.y + s.h / 2;
     const edgeX = s.vx > 0 ? newX + s.w : newX;
     if (Math.abs(s.vx) > 0.1 && (solidAt(edgeX, midY) || solidAt(edgeX, s.y + 4))) {
-      s.vx = 0;
-      if (s.onGround) { s.vy = -8; s.onGround = false; }
+      // 벽 만나면 자동 캐기 시도!
+      if (servantMineNearby(s)) {
+        s.vx = 0;
+      } else {
+        s.vx = 0;
+        if (s.onGround) { s.vy = -8; s.onGround = false; }
+      }
     } else s.x = newX;
     // 근처 몹 자동 공격
     for (const a of (animals || [])) {
