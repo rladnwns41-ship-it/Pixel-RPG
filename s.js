@@ -13,8 +13,35 @@ const crypto = require('crypto');
 const RULES = require('./server-gamedata.js');
 
 const PORT = process.env.PORT || 3000;
-const GROQ_API_KEY = process.env.GROQ_API_KEY || '';   // 없으면 휴리스틱만, 있으면 AI 판정
-const ADMIN_IDS = new Set((process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean)); // 관리자 아이디 목록 (쉼표구분)
+const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
+const ADMIN_IDS = new Set((process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean));
+const BOT_SERVER_URL = 'https://bot-oi7z.onrender.com';
+const BOT_SERVER_TOKEN = process.env.BOT_SERVER_TOKEN || '';
+
+// ─── 서버 시작 시 봇 학습 자동 트리거 (30초 후) ───
+if (BOT_SERVER_TOKEN) {
+  setTimeout(async () => {
+    try {
+      console.log('🤖 봇 서버 자동 학습 트리거 중...');
+      // 봇 서버 깨우기 (콜드스타트 대응)
+      await fetch(BOT_SERVER_URL + '/').catch(() => null);
+      await new Promise(r => setTimeout(r, 5000)); // 5초 대기
+      // 학습 상태 확인
+      const status = await fetch(BOT_SERVER_URL + '/train/status').then(r => r.json()).catch(() => null);
+      if (status && status.isTraining) { console.log('⏭️ 이미 학습 중 - 스킵'); return; }
+      // 학습 시작
+      const res = await fetch(BOT_SERVER_URL + '/train', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: BOT_SERVER_TOKEN, epochs: 10, limit: 10000 }),
+      }).then(r => r.json()).catch(() => null);
+      if (res && res.started) console.log('✅ 봇 자동 학습 시작됨!');
+      else if (res && res.error) console.log('⚠️ 봇 학습 응답:', res.error);
+    } catch(e) {
+      console.warn('봇 자동 학습 트리거 실패:', e.message);
+    }
+  }, 30000);
+}
 let svc;
 try { svc = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}'); }
 catch (e) { console.error('❌ FIREBASE_SERVICE_ACCOUNT JSON 파싱 실패'); process.exit(1); }
