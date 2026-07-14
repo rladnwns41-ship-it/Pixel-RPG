@@ -16750,30 +16750,68 @@ function broadcastBots() {
 window.broadcastBots = broadcastBots;
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 👥 하인(Servant) 시스템 — 상점 구매·소환·이름·공유
-//   상점에서 랜덤 능력치 하인 구매 → 소유자 옆에 따라옴
-//   Firebase에 저장되어 다른 유저에게도 보임
+// 👥 하인 시스템 — 상점 구매·소환·이름·공유·명령·저장
 // ═══════════════════════════════════════════════════════════════════════════
 let servants = [];  // 내가 소유한 하인 배열
-let servantShopStock = []; // 상점 재고
+let servantShopStock = [];
+let _servantMode = 'follow'; // 전역 명령 모드: follow | mine | fight | idle
+
+// ─── 하인 유저 계정 저장/로드 ───
+async function saveServants() {
+  if (isOffline || !supabase || !supabase.db || !player) return;
+  try {
+    // 능력치·이름·모드 저장 (위치는 저장 안 함 - 항상 소환)
+    const data = servants.map(s => ({
+      id: s.id, name: s.name, defaultName: s.defaultName,
+      hp: s.hp, maxHp: s.maxHp, atk: s.atk,
+      speed: s.speed, mineSpeed: s.mineSpeed,
+      level: s.level, price: s.price,
+      costume: s.costume,
+    }));
+    await supabase.db.ref('users/' + player.name + '/servants_list').set(JSON.stringify(data));
+  } catch(e) { console.warn('하인 저장 실패:', e.message); }
+}
+
+async function loadServants() {
+  if (isOffline || !supabase || !supabase.db || !player) return;
+  try {
+    const snap = await supabase.db.ref('users/' + player.name + '/servants_list').get();
+    const raw = snap.val();
+    if (!raw) return;
+    const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!Array.isArray(data)) return;
+    // 위치는 플레이어 옆에 소환
+    servants = data.map(d => ({
+      ...d,
+      owner: player.name,
+      x: player.x + (Math.random() * 100 - 50),
+      y: player.y - 20,
+      vx: 0, vy: 0, w: 24, h: 32, dir: 1,
+      walkFrame: 0, onGround: false,
+      currentAction: 'follow',
+      lastActionTs: 0, lastAttackTs: 0,
+      _mode: 'follow',
+    }));
+    console.log(`👥 하인 ${servants.length}명 로드됨`);
+  } catch(e) { console.warn('하인 로드 실패:', e.message); }
+}
+window.saveServants = saveServants;
+window.loadServants = loadServants;
 
 // ─── 하인 능력치 생성 (랜덤) ───
 function generateRandomServant() {
   const nameCandidates = ['카를', '리안', '엘리', '조이', '마르코', '루카', '노아', '레아', '이안', '나야', '테오', '아라', '유나', '수야', '진수', '민수'];
   const name = nameCandidates[Math.floor(Math.random() * nameCandidates.length)];
-  // 능력치 (10~100)
   const hp = 30 + Math.floor(Math.random() * 70);
   const atk = 3 + Math.floor(Math.random() * 15);
-  const speed = 0.8 + Math.random() * 1.2;      // 이동 속도 배율 (0.8~2.0)
-  const mineSpeed = 0.5 + Math.random() * 1.5;   // 채집 속도 배율
-  // 가격 = (hp/2 + atk*10 + speed*100 + mineSpeed*50)
+  const speed = 0.8 + Math.random() * 1.2;
+  const mineSpeed = 0.5 + Math.random() * 1.5;
   const price = Math.floor(hp/2 + atk*10 + speed*100 + mineSpeed*50);
   return {
     id: 'sv_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
     defaultName: name,
     hp, maxHp: hp, atk, speed, mineSpeed, price,
     level: 1 + Math.floor(Math.random() * 20),
-    // 시각 (랜덤 코스튬)
     costume: {
       hair: Math.floor(Math.random()*3),
       outfit: Math.floor(Math.random()*3),
@@ -16783,7 +16821,6 @@ function generateRandomServant() {
   };
 }
 
-// ─── 상점 재고 새로고침 (10마리) ───
 function refreshServantShop() {
   servantShopStock = [];
   for (let i = 0; i < 10; i++) servantShopStock.push(generateRandomServant());
@@ -16902,12 +16939,15 @@ window.buyServant = function(idx) {
     owner: player.name,
     x: player.x + (Math.random() * 60 - 30),
     y: player.y,
-    vx: 0, vy: 0, w: 24, h: 32,
+    vx: 0, vy: 0, w: 24, h: 32, dir: 1,
     walkFrame: 0, onGround: false,
     currentAction: 'follow',
-    lastActionTs: 0,
+    lastActionTs: 0, lastAttackTs: 0,
+    _mode: 'follow',
   };
   servants.push(servant);
+  // 유저 계정에 자동 저장
+  saveServants();
   // Firebase에 저장 (공유용)
   try {
     if (!isOffline && supabase && supabase.db) {
@@ -16980,32 +17020,69 @@ function updateServants() {
   const g = 0.55;
   for (const s of servants) {
     if (s.hp <= 0) continue;
-    // 소유자 위치 기준 (플레이어)
     const target = player;
     if (!target) continue;
-    // 소유자와 거리
     const dx = target.x - s.x;
     const dy = target.y - s.y;
     const dist = Math.hypot(dx, dy);
-    // 4칸 이상 떨어지면 따라옴
-    if (dist > TILE * 3) {
-      s.vx = Math.sign(dx) * s.speed * 1.5;
+    const mode = s._mode || 'follow';
+
+    // ─── 소유자와 너무 멀면 무조건 텔레포트 (15칸 이상) ───
+    if (dist > TILE * 15) {
+      s.x = target.x + (Math.random() * 60 - 30);
+      s.y = target.y - 30;
+      s.vx = 0; s.vy = 0;
+      continue;
+    }
+
+    // ─── 소유자와 멀리 있으면 우선 따라감 (모드 상관없이) ───
+    if (dist > TILE * 4) {
+      s.vx = Math.sign(dx) * s.speed * 2;
       s.dir = dx > 0 ? 1 : -1;
       s.walkFrame++;
-      // 위에 있으면 점프
       if (dy < -TILE && s.onGround) { s.vy = -8; s.onGround = false; }
     } else {
-      // 소유자 근처 → 채집 모드!
-      s.vx *= 0.7;
-      // ⛏️ 자동 채집 (mineSpeed에 비례)
-      const mineChance = 0.04 * (s.mineSpeed || 1);
-      if (Math.random() < mineChance) servantMineNearby(s);
-      // 🎁 자동 픽업
-      if (Math.random() < 0.05) servantPickupNearby(s);
+      // ─── 근처면 모드별 행동 ───
+      if (mode === 'mine') {
+        // 채집 모드: 계속 좌우 왕복하며 캐기
+        if (!s._mineDir || Math.random() < 0.005) s._mineDir = Math.random() > 0.5 ? 1 : -1;
+        s.vx = s._mineDir * s.speed * 0.8;
+        s.dir = s._mineDir;
+        s.walkFrame++;
+        // 채집 시도 (매 프레임! mineSpeed 비례)
+        if (Math.random() < 0.08 * (s.mineSpeed || 1)) servantMineNearby(s);
+      } else if (mode === 'fight') {
+        // 전투 모드: 근처 몹 찾아 이동
+        let nearestMob = null, minD = 999999;
+        for (const a of (animals || [])) {
+          if (a.dead) continue;
+          const md = Math.hypot(a.x - s.x, a.y - s.y);
+          if (md < minD && md < TILE * 10) { minD = md; nearestMob = a; }
+        }
+        if (nearestMob) {
+          const mdx = nearestMob.x - s.x;
+          s.vx = Math.sign(mdx) * s.speed * 1.5;
+          s.dir = mdx > 0 ? 1 : -1;
+          s.walkFrame++;
+        } else {
+          s.vx *= 0.7;
+        }
+      } else if (mode === 'idle') {
+        // 대기: 그냥 멈춤
+        s.vx *= 0.5;
+      } else {
+        // follow: 근처 대기 + 가끔 채집/픽업
+        s.vx *= 0.7;
+        if (Math.random() < 0.04 * (s.mineSpeed || 1)) servantMineNearby(s);
+      }
+      // 픽업은 모든 모드에서 시도
+      if (Math.random() < 0.07) servantPickupNearby(s);
     }
+
     // 중력
     if (!oceanMode) s.vy = Math.min(12, s.vy + g);
-    // ── 벽/지면 충돌 ──
+
+    // 벽/지면 충돌
     function solidAt(px, py) {
       const tx = Math.floor(px / TILE);
       const ty = Math.floor(py / TILE);
@@ -17016,6 +17093,7 @@ function updateServants() {
       if (typeof t === 'object') return !!t.type;
       return false;
     }
+
     // Y
     let newY = s.y + s.vy;
     const footY = newY + s.h;
@@ -17026,35 +17104,40 @@ function updateServants() {
       s.vy = 0; newY = s.y;
     } else s.onGround = false;
     s.y = newY;
+
     // X
     let newX = s.x + s.vx;
     const midY = s.y + s.h / 2;
     const edgeX = s.vx > 0 ? newX + s.w : newX;
     if (Math.abs(s.vx) > 0.1 && (solidAt(edgeX, midY) || solidAt(edgeX, s.y + 4))) {
-      // 벽 만나면 자동 캐기 시도!
+      // 벽 만나면 자동 채집!
       if (servantMineNearby(s)) {
         s.vx = 0;
       } else {
         s.vx = 0;
+        if (mode === 'mine' && s._mineDir) s._mineDir *= -1;
         if (s.onGround) { s.vy = -8; s.onGround = false; }
       }
     } else s.x = newX;
-    // 근처 몹 자동 공격
+
+    // 근처 몹 자동 공격 (모드 무관)
     for (const a of (animals || [])) {
       if (a.dead) continue;
       if (Math.hypot(a.x - s.x, a.y - s.y) < TILE * 2) {
-        if (Date.now() - (s.lastAttackTs || 0) > 800) {
+        if (Date.now() - (s.lastAttackTs || 0) > 600) {
           s.lastAttackTs = Date.now();
-          a.currentHp -= s.atk; a.hit = true; a.hitTimer = 10;
+          a.currentHp -= s.atk;
+          a.hit = true; a.hitTimer = 10;
           if (a.currentHp <= 0 && typeof killAnimal === 'function') killAnimal(a);
           break;
         }
       }
     }
+
     // 월드 경계
     if (s.x < 0) s.x = 0;
     if (s.x > WORLD_W * TILE - s.w) s.x = WORLD_W * TILE - s.w;
-    if (s.y > WORLD_H * TILE * 0.95) { s.x = player.x; s.y = player.y - 50; s.vx = 0; s.vy = 0; }
+    if (s.y > WORLD_H * TILE * 0.95) { s.x = target.x; s.y = target.y - 50; s.vx = 0; s.vy = 0; }
   }
 }
 
@@ -22439,6 +22522,41 @@ function sendChat(rawText) {
     else addChatMessage('시스템', '❌ 하인 고용소 기능 없음', '#FF8888');
     return;
   }
+  // ─── 하인 명령어 ───
+  if (text.startsWith('/하인 ') || text === '/따라와' || text === '/채집' || text === '/전투' || text === '/대기' || text === '/저장' || text === '/소환') {
+    const cmd = text === '/따라와' ? 'follow'
+              : text === '/채집' ? 'mine'
+              : text === '/전투' ? 'fight'
+              : text === '/대기' ? 'idle'
+              : text === '/저장' ? 'save'
+              : text === '/소환' ? 'summon'
+              : text.replace('/하인 ', '').trim();
+    if (cmd === 'follow' || cmd === '따라와') {
+      servants.forEach(s => s._mode = 'follow');
+      addChatMessage('👥', `${servants.length}명이 따라옵니다`, '#FFD24A');
+    } else if (cmd === 'mine' || cmd === '채집') {
+      servants.forEach(s => s._mode = 'mine');
+      addChatMessage('👥', `${servants.length}명이 채집 시작`, '#88FF88');
+    } else if (cmd === 'fight' || cmd === '전투') {
+      servants.forEach(s => s._mode = 'fight');
+      addChatMessage('👥', `${servants.length}명이 전투 모드`, '#FF6666');
+    } else if (cmd === 'idle' || cmd === '대기') {
+      servants.forEach(s => s._mode = 'idle');
+      addChatMessage('👥', `${servants.length}명이 대기 중`, '#8890BB');
+    } else if (cmd === 'save' || cmd === '저장') {
+      saveServants();
+      addChatMessage('👥', '하인 정보 저장 완료', '#88CCFF');
+    } else if (cmd === 'summon' || cmd === '소환') {
+      servants.forEach(s => { s.x = player.x + Math.random()*60-30; s.y = player.y - 20; s.vx = 0; s.vy = 0; });
+      addChatMessage('👥', `${servants.length}명 소환 완료`, '#FFD24A');
+    } else if (cmd === '목록' || cmd === 'list') {
+      const list = servants.map(s => `${s.name}(Lv.${s.level}, ${s._mode||'follow'})`).join(', ');
+      addChatMessage('👥', list || '없음', '#FFD24A');
+    } else {
+      addChatMessage('시스템', '명령: /따라와 /채집 /전투 /대기 /소환 /저장 /하인 목록', '#88CCFF');
+    }
+    return;
+  }
   // ─── 신고 명령어: /신고 닉네임 이유 ───
   if (text.startsWith('/신고 ') || text.startsWith('/report ')) {
     const rest = text.replace(/^\/(신고|report)\s+/, '').trim();
@@ -25294,8 +25412,17 @@ window.startGame = function (userData) {
   }, 2000);
   // ─── 🤖 서버 시작 시 자동 학습은 봇 서버가 알아서 함 (Render 환경변수 BOT_SERVER_TOKEN 사용)
   // 관리자는 봇 관리자 패널에서 수동으로도 가능
-  // 👥 하인 동기화 (다른 유저 하인 감지)
-  setTimeout(() => { if (typeof startServantSync === 'function') startServantSync(); }, 3000);
+  // 👥 하인 동기화 (다른 유저 하인 감지) + 내 하인 로드
+  setTimeout(() => {
+    if (typeof startServantSync === 'function') startServantSync();
+    if (typeof loadServants === 'function') loadServants();
+  }, 3000);
+  // 하인 자동 저장 (30초마다)
+  if (!window._servantAutoSaveInterval) {
+    window._servantAutoSaveInterval = setInterval(() => {
+      if (typeof saveServants === 'function' && servants.length > 0) saveServants();
+    }, 30000);
+  }
   // 서버 전환 시 이전 채널에서 완전 이탈 처리
   if (!isOffline && supabase && player) {
     const prevChannel = supabase._channelId;
