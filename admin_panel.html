@@ -13226,6 +13226,7 @@ function showSettings() {
       <div style="font-size:8px;color:#FFD24A;margin:14px 0 6px;letter-spacing:1px;">— 🌟 신규 콘텐츠 —</div>
       <div style="display:flex;flex-direction:column;gap:6px;padding:6px 4px;">
         <button onclick="closePanel();showNotification('🌊 바다(물 근처)에서 F키를 눌러 잠수하세요!',{duration:3500});" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#0a1a3a,#050a20);border:2px solid #4488ff;color:#88ccff;cursor:pointer;">🌊 심해 잠수 방법</button>
+        <button onclick="closePanel();openServantShop();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#2a1a08,#150a04);border-top:2px solid #886644;border-left:2px solid #886644;border-bottom:2px solid #201004;border-right:2px solid #201004;color:#ffcc88;cursor:pointer;">👥 하인 고용소</button>
         <button onclick="closePanel();showArenaRanking();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#2a0a2a,#150515);border:2px solid #ff4488;color:#ff88cc;cursor:pointer;">⚔️ PVP 아레나 (1v1)</button>
         <button onclick="closePanel();openMarketNPC();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#2a1a05,#150a02);border:2px solid #ffaa44;color:#ffcc88;cursor:pointer;">💹 방랑 상인 (동적 시세)</button>
       </div>
@@ -16748,7 +16749,299 @@ function broadcastBots() {
 }
 window.broadcastBots = broadcastBots;
 
-// ─── 봇 관리자 패널 ───
+// ═══════════════════════════════════════════════════════════════════════════
+// 👥 하인(Servant) 시스템 — 상점 구매·소환·이름·공유
+//   상점에서 랜덤 능력치 하인 구매 → 소유자 옆에 따라옴
+//   Firebase에 저장되어 다른 유저에게도 보임
+// ═══════════════════════════════════════════════════════════════════════════
+let servants = [];  // 내가 소유한 하인 배열
+let servantShopStock = []; // 상점 재고
+
+// ─── 하인 능력치 생성 (랜덤) ───
+function generateRandomServant() {
+  const nameCandidates = ['카를', '리안', '엘리', '조이', '마르코', '루카', '노아', '레아', '이안', '나야', '테오', '아라', '유나', '수야', '진수', '민수'];
+  const name = nameCandidates[Math.floor(Math.random() * nameCandidates.length)];
+  // 능력치 (10~100)
+  const hp = 30 + Math.floor(Math.random() * 70);
+  const atk = 3 + Math.floor(Math.random() * 15);
+  const speed = 0.8 + Math.random() * 1.2;      // 이동 속도 배율 (0.8~2.0)
+  const mineSpeed = 0.5 + Math.random() * 1.5;   // 채집 속도 배율
+  // 가격 = (hp/2 + atk*10 + speed*100 + mineSpeed*50)
+  const price = Math.floor(hp/2 + atk*10 + speed*100 + mineSpeed*50);
+  return {
+    id: 'sv_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+    defaultName: name,
+    hp, maxHp: hp, atk, speed, mineSpeed, price,
+    // 시각 (랜덤 코스튬)
+    costume: {
+      hair: Math.floor(Math.random()*3),
+      outfit: Math.floor(Math.random()*3),
+      accessory: 0,
+    },
+    dir: 1,
+  };
+}
+
+// ─── 상점 재고 새로고침 (10마리) ───
+function refreshServantShop() {
+  servantShopStock = [];
+  for (let i = 0; i < 10; i++) servantShopStock.push(generateRandomServant());
+}
+
+// ─── 하인 상점 UI ───
+window.openServantShop = function() {
+  if (servantShopStock.length === 0) refreshServantShop();
+  const overlay = document.createElement('div');
+  overlay.className = 'pixel-modal-overlay';
+  overlay.onmousedown = (e) => { if (e.target === overlay) overlay.remove(); };
+  const rows = servantShopStock.map((sv, i) => `
+    <div style="display:flex; align-items:center; gap:10px; padding:8px; background:rgba(10,14,30,0.6); border:1px solid #1c2244; margin-bottom:6px;">
+      <div style="font-size:24px;">🧑</div>
+      <div style="flex:1; font-size:7.5px; line-height:1.8;">
+        <div style="color:#ffdd66; font-size:8.5px; margin-bottom:2px;">${sv.defaultName}</div>
+        <div style="color:#c8d0ff;">HP <span style="color:#ff8888;">${sv.hp}</span> · 공격 <span style="color:#ffaa66;">${sv.atk}</span></div>
+        <div style="color:#c8d0ff;">이동 <span style="color:#88ccff;">×${sv.speed.toFixed(1)}</span> · 채집 <span style="color:#88ff88;">×${sv.mineSpeed.toFixed(1)}</span></div>
+      </div>
+      <div style="text-align:right;">
+        <div style="color:#ffd24a; font-size:9px; margin-bottom:4px;">💰${sv.price}G</div>
+        <button onclick="buyServant(${i})"
+          style="font-family:'Press Start 2P',monospace; font-size:7px; padding:6px 12px; cursor:pointer;
+          background:linear-gradient(180deg,#0a2a10,#051510);
+          border-top:2px solid #44aa66; border-left:2px solid #44aa66;
+          border-bottom:2px solid #041004; border-right:2px solid #041004;
+          color:#88ff88;">고용</button>
+      </div>
+    </div>
+  `).join('');
+  overlay.innerHTML = `
+    <div class="pixel-modal" style="width: min(560px, 92vw); max-height: 90vh; display:flex; flex-direction:column;">
+      <div class="panel-header">
+        <span class="panel-title">👥 하인 고용소</span>
+        <button class="panel-close" onclick="this.closest('.pixel-modal-overlay').remove()">✕</button>
+      </div>
+      <div class="panel-body" style="padding: 14px; overflow-y: auto; font-family:'Press Start 2P',monospace;">
+        <div style="font-size:7px; color:#8890bb; line-height:1.8; margin-bottom:10px; text-align:center;">
+          하인을 고용하여 자원 채집·전투에 도움을 받으세요.<br>
+          <span style="color:#ffd24a;">현재 소유: ${servants.length}명 · 골드 💰${player.gold||0}G</span>
+        </div>
+        ${rows}
+        <div style="display:flex; gap:6px; margin-top:12px;">
+          <button onclick="refreshServantShop(); this.closest('.pixel-modal-overlay').remove(); openServantShop();"
+            style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
+            background:#1a1a2e; border:2px solid #445; color:#aab;">🔄 재고 갱신 (100G)</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+};
+
+window.buyServant = function(idx) {
+  const sv = servantShopStock[idx];
+  if (!sv) return;
+  if (!player || (player.gold || 0) < sv.price) {
+    showNotification('❌ 골드 부족!', { duration: 2000 });
+    return;
+  }
+  // 이름 지정
+  const customName = prompt(`${sv.defaultName}의 이름을 정해주세요 (취소=기본이름):`, sv.defaultName);
+  const finalName = (customName || sv.defaultName).slice(0, 20);
+  // 골드 차감
+  player.gold -= sv.price;
+  // 상점 재고에서 제거
+  servantShopStock.splice(idx, 1);
+  // 하인 인스턴스 생성
+  const servant = {
+    ...sv,
+    name: finalName,
+    owner: player.name,
+    x: player.x + (Math.random() * 60 - 30),
+    y: player.y,
+    vx: 0, vy: 0, w: 24, h: 32,
+    walkFrame: 0, onGround: false,
+    currentAction: 'follow',
+    lastActionTs: 0,
+  };
+  servants.push(servant);
+  // Firebase에 저장 (공유용)
+  try {
+    if (!isOffline && supabase && supabase.db) {
+      supabase.db.ref('servants/' + servant.id).set({
+        id: servant.id, name: servant.name, owner: servant.owner,
+        x: Math.round(servant.x), y: Math.round(servant.y), dir: servant.dir,
+        hp: servant.hp, maxHp: servant.maxHp, atk: servant.atk,
+        costume: servant.costume, lastUpdate: Date.now(),
+      });
+    }
+  } catch(e) {}
+  showNotification(`👥 ${finalName} 고용됨!`, { duration: 2500 });
+  // 상점 창 갱신
+  document.querySelectorAll('.pixel-modal-overlay').forEach(el => {
+    if (el.querySelector('.panel-title')?.textContent?.includes('하인 고용소')) el.remove();
+  });
+  window.openServantShop();
+};
+
+// ─── 하인 업데이트 (매 프레임: 소유자 따라옴 + 자동 액션) ───
+function updateServants() {
+  if (servants.length === 0) return;
+  const g = 0.55;
+  for (const s of servants) {
+    if (s.hp <= 0) continue;
+    // 소유자 위치 기준 (플레이어)
+    const target = player;
+    if (!target) continue;
+    // 소유자와 거리
+    const dx = target.x - s.x;
+    const dy = target.y - s.y;
+    const dist = Math.hypot(dx, dy);
+    // 4칸 이상 떨어지면 따라옴
+    if (dist > TILE * 3) {
+      s.vx = Math.sign(dx) * s.speed * 1.5;
+      s.dir = dx > 0 ? 1 : -1;
+      s.walkFrame++;
+      // 위에 있으면 점프
+      if (dy < -TILE && s.onGround) { s.vy = -8; s.onGround = false; }
+    } else {
+      s.vx *= 0.7;
+    }
+    // 중력
+    if (!oceanMode) s.vy = Math.min(12, s.vy + g);
+    // ── 벽/지면 충돌 ──
+    function solidAt(px, py) {
+      const tx = Math.floor(px / TILE);
+      const ty = Math.floor(py / TILE);
+      if (tx < 0 || tx >= WORLD_W || ty < 0 || ty >= WORLD_H) return true;
+      const t = world[tx] && world[tx][ty];
+      if (t === undefined || t === null) return false;
+      if (typeof t === 'number') return t !== TILES.AIR && t !== TILES.WATER;
+      if (typeof t === 'object') return !!t.type;
+      return false;
+    }
+    // Y
+    let newY = s.y + s.vy;
+    const footY = newY + s.h;
+    if (s.vy > 0 && (solidAt(s.x + 4, footY) || solidAt(s.x + s.w - 4, footY))) {
+      newY = Math.floor(footY / TILE) * TILE - s.h;
+      s.vy = 0; s.onGround = true;
+    } else if (s.vy < 0 && (solidAt(s.x + 4, newY) || solidAt(s.x + s.w - 4, newY))) {
+      s.vy = 0; newY = s.y;
+    } else s.onGround = false;
+    s.y = newY;
+    // X
+    let newX = s.x + s.vx;
+    const midY = s.y + s.h / 2;
+    const edgeX = s.vx > 0 ? newX + s.w : newX;
+    if (Math.abs(s.vx) > 0.1 && (solidAt(edgeX, midY) || solidAt(edgeX, s.y + 4))) {
+      s.vx = 0;
+      if (s.onGround) { s.vy = -8; s.onGround = false; }
+    } else s.x = newX;
+    // 근처 몹 자동 공격
+    for (const a of (animals || [])) {
+      if (a.dead) continue;
+      if (Math.hypot(a.x - s.x, a.y - s.y) < TILE * 2) {
+        if (Date.now() - (s.lastAttackTs || 0) > 800) {
+          s.lastAttackTs = Date.now();
+          a.currentHp -= s.atk; a.hit = true; a.hitTimer = 10;
+          if (a.currentHp <= 0 && typeof killAnimal === 'function') killAnimal(a);
+          break;
+        }
+      }
+    }
+    // 월드 경계
+    if (s.x < 0) s.x = 0;
+    if (s.x > WORLD_W * TILE - s.w) s.x = WORLD_W * TILE - s.w;
+    if (s.y > WORLD_H * TILE * 0.95) { s.x = player.x; s.y = player.y - 50; s.vx = 0; s.vy = 0; }
+  }
+}
+
+// ─── 하인 렌더 (drawPlayer 재활용) ───
+function drawServants() {
+  if (servants.length === 0 || !ctx) return;
+  for (const s of servants) {
+    if (s.hp <= 0) continue;
+    const sx = s.x - camera.x;
+    if (sx < -50 || sx > canvas.width + 50) continue;
+    if (typeof drawPlayer === 'function') {
+      try { drawPlayer(s, true); } catch(e) {}
+    }
+    // 하인 표시 (이름 위에 왕관)
+    ctx.font = 'bold 10px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    const nx = s.x + s.w/2 - camera.x;
+    const ny = s.y - camera.y - 24;
+    ctx.fillStyle = '#000'; ctx.fillText('👥', nx + 1, ny + 1);
+    ctx.fillStyle = '#ffd24a'; ctx.fillText('👥', nx, ny);
+  }
+}
+
+// ─── 하인 위치 브로드캐스트 (다른 유저에게 보이도록) ───
+let _lastServantBroadcastTs = 0;
+function broadcastServants() {
+  if (isOffline || !supabase || !supabase.db) return;
+  const now = Date.now();
+  if (now - _lastServantBroadcastTs < 500) return; // 500ms에 한 번
+  _lastServantBroadcastTs = now;
+  for (const s of servants) {
+    if (s.hp <= 0) continue;
+    try {
+      supabase.db.ref('servants/' + s.id).update({
+        x: Math.round(s.x), y: Math.round(s.y), dir: s.dir,
+        hp: s.hp, lastUpdate: now,
+      });
+    } catch(e) {}
+  }
+}
+
+// ─── 다른 유저의 하인 감지 & 렌더 ───
+let otherServants = {};  // { id -> {x,y,name,owner,...} }
+function startServantSync() {
+  if (window._servantSyncInstalled) return;
+  window._servantSyncInstalled = true;
+  if (isOffline || !supabase || !supabase.db) return;
+  const ref = supabase.db.ref('servants');
+  ref.on('value', snap => {
+    const val = snap.val() || {};
+    otherServants = {};
+    const now = Date.now();
+    for (const id in val) {
+      const sv = val[id];
+      if (!sv || sv.owner === player?.name) continue; // 내 하인은 이미 로컬에
+      if (now - (sv.lastUpdate || 0) > 60000) continue; // 1분 이상 업뎃 없으면 제외
+      otherServants[id] = { ...sv, w: 24, h: 32 };
+    }
+  });
+}
+function drawOtherServants() {
+  if (!ctx) return;
+  for (const id in otherServants) {
+    const s = otherServants[id];
+    if (!s || s.hp <= 0) continue;
+    const sx = s.x - camera.x;
+    if (sx < -50 || sx > canvas.width + 50) continue;
+    if (typeof drawPlayer === 'function') {
+      try { drawPlayer(s, true); } catch(e) {}
+    }
+    ctx.font = 'bold 10px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    const nx = s.x + s.w/2 - camera.x;
+    const ny = s.y - camera.y - 24;
+    ctx.fillStyle = '#000'; ctx.fillText('👥', nx + 1, ny + 1);
+    ctx.fillStyle = '#ff88cc'; ctx.fillText('👥', nx, ny); // 남의 하인은 분홍
+    // 소유자 이름 표시
+    ctx.font = 'bold 7px "Press Start 2P", monospace';
+    ctx.fillStyle = '#000'; ctx.fillText(s.owner + '의', nx + 1, ny - 12 + 1);
+    ctx.fillStyle = '#8890bb'; ctx.fillText(s.owner + '의', nx, ny - 12);
+  }
+}
+window.startServantSync = startServantSync;
+window.openServantShop = openServantShop;
+window.refreshServantShop = refreshServantShop;
+window.updateServants = updateServants;
+window.drawServants = drawServants;
+window.drawOtherServants = drawOtherServants;
+window.broadcastServants = broadcastServants;
+
+
 let _botPanelPollInterval = null;
 
 window.openBotAdminPanel = async function() {
@@ -23137,6 +23430,8 @@ function gameLoop(timestamp) {
   if (typeof checkOceanEntryPrompt === 'function') checkOceanEntryPrompt();
   if (typeof updateBots === 'function') updateBots();
   if (typeof broadcastBots === 'function') broadcastBots();
+  if (typeof updateServants === 'function') updateServants();
+  if (typeof broadcastServants === 'function') broadcastServants();
   // 저사양 모드: 물/낮밤 갱신을 격프레임으로 (시각 차이 거의 없음, CPU 절약)
   if (!_perfLow || frameCount % 2 === 0) { updateDayNight(); updateWater(); }
   updateWeather();
@@ -23266,6 +23561,9 @@ function gameLoop(timestamp) {
   drawPlayerPet();
   // 🤖 학습형 봇
   if (typeof drawBots === 'function') drawBots();
+  // 👥 하인
+  if (typeof drawServants === 'function') drawServants();
+  if (typeof drawOtherServants === 'function') drawOtherServants();
   // 🐠 심해 생물 (플레이어 위)
   if (typeof drawOceanCreatures === 'function') drawOceanCreatures();
   // 🧙 방랑 상인 NPC
@@ -23547,6 +23845,40 @@ function mgLobbyTick() {
 }
 
 // 호스트가 라운드 정보를 결정하고 broadcast
+// 🎮 미니게임 라운드 Firebase 동기화 - 브로드캐스트 유실 대비 폴링
+let _mgSyncInterval = null;
+let _mgLastSyncedRound = 0;
+function startMinigameRoundSync() {
+  if (_mgSyncInterval) return;
+  _mgSyncInterval = setInterval(async () => {
+    if (!_isMinigameServer) { stopMinigameRoundSync(); return; }
+    if (!supabase || !supabase.db) return;
+    try {
+      const snap = await supabase.db.ref('map_meta/mg_round').get();
+      const r = snap.val();
+      if (!r || !r.gameStartAt) return;
+      // 이미 진행 중인 라운드거나 오래된 라운드 무시
+      if (r.round <= _mgLastSyncedRound) return;
+      if (mgState && mgRoundNum === r.round) return;
+      if (r.host === player?.name) { _mgLastSyncedRound = r.round; return; } // 내가 호스트면 이미 로컬 시작
+      // 게임 시작 시간이 이미 지났으면 (30초 이상) 스킵
+      if (Date.now() - r.gameStartAt > 30000) return;
+      // 라운드 적용
+      const def = MINIGAME_DEFS.find(d => d.id === r.gameId);
+      if (def) {
+        _mgLastSyncedRound = r.round;
+        mgApplyRound(r.round, def, r.teams || null, r.bombHolder || null, r.gameStartAt);
+      }
+    } catch(e) {}
+  }, 1500);
+}
+function stopMinigameRoundSync() {
+  if (_mgSyncInterval) { clearInterval(_mgSyncInterval); _mgSyncInterval = null; }
+  _mgLastSyncedRound = 0;
+}
+window.startMinigameRoundSync = startMinigameRoundSync;
+window.stopMinigameRoundSync = stopMinigameRoundSync;
+
 function mgHostStartRound() {
   mgRoundNum++;
 
@@ -23582,16 +23914,28 @@ function mgHostStartRound() {
   // 게임 시작 시간 동기화: 지금부터 4초 후 (카운트다운 3초 + 1초 여유)
   const gameStartAt = Date.now() + 4000;
 
-  // broadcast
+  // 라운드 페이로드
+  const roundPayload = {
+    round: mgRoundNum,
+    gameId: def.id,
+    teams,
+    bombHolder,
+    gameStartAt,
+    host: player.name,
+  };
+
+  // broadcast + Firebase 저장 (브로드캐스트 유실 방지)
   if (!isOffline && supabase) {
-    supabase.broadcast('mg_round_sync', {
-      round: mgRoundNum,
-      gameId: def.id,
-      teams,
-      bombHolder,
-      gameStartAt,
-      host: player.name,
-    });
+    supabase.broadcast('mg_round_sync', roundPayload);
+    // Firebase에 라운드 상태 영구 저장 (신규 접속자·유실 복구용)
+    try {
+      if (supabase.db) {
+        supabase.db.ref('map_meta/mg_round').set({
+          ...roundPayload,
+          setAt: Date.now(),
+        });
+      }
+    } catch(e) {}
   }
 
   // 호스트 자신도 시작
@@ -24700,6 +25044,10 @@ function joinSelectedServer() {
     document.getElementById('serverSelectScreen').style.display = 'none';
     _isMinigameServer = true;
     startGame(_pendingUserData);
+    // 🎮 미니게임 라운드 Firebase 동기화 시작 (브로드캐스트 유실 대비)
+    setTimeout(() => {
+      if (typeof startMinigameRoundSync === 'function') startMinigameRoundSync();
+    }, 2000);
     return;
   }
   if (_selectedMcServer === 'private') {
@@ -24817,33 +25165,10 @@ window.startGame = function (userData) {
       else if (cnt > 0) console.log('[아레나] 이탈 기록:', cnt, '회 (3회부터 페널티)');
     }).catch(()=>{});
   }, 2000);
-  // ─── 🤖 관리자 로그인 시 자동 봇 학습 트리거 (하루 1번) ───
-  setTimeout(async () => {
-    if (!isAdmin || !isAdmin()) return;
-    const lastAutoTrain = parseInt(localStorage.getItem('_botLastAutoTrain') || '0');
-    if (Date.now() - lastAutoTrain < 24 * 60 * 60 * 1000) return; // 24시간 쿨다운
-    try {
-      const health = await fetch(BOT_SERVER_URL + '/', { method: 'GET' }).then(r => r.json()).catch(() => null);
-      if (!health || !health.ok) return;
-      const stats = await fetch(BOT_SERVER_URL + '/stats').then(r => r.json()).catch(() => null);
-      if (!stats || (stats.total || 0) < 100) return; // 100개 미만이면 스킵
-      const trainStatus = await fetch(BOT_SERVER_URL + '/train/status').then(r => r.json()).catch(() => null);
-      if (trainStatus && trainStatus.isTraining) return;
-      // 자동 학습 조건 만족 → 관리자에게 알림 + 자동 학습 시작
-      const token = prompt(`🤖 자동 학습 트리거\n데이터 ${stats.total}개 수집됨. 학습 시작?\nBOT_SERVER_TOKEN 입력 (취소하려면 빈값):`);
-      if (!token) return;
-      const r = await fetch(BOT_SERVER_URL + '/train', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, epochs: 10, limit: 10000 }),
-      });
-      const j = await r.json();
-      if (j.started) {
-        localStorage.setItem('_botLastAutoTrain', String(Date.now()));
-        showNotification('🎓 자동 학습 시작됨', { duration: 3000 });
-      }
-    } catch(e) { console.warn('자동학습 실패:', e.message); }
-  }, 5000);
+  // ─── 🤖 서버 시작 시 자동 학습은 봇 서버가 알아서 함 (Render 환경변수 BOT_SERVER_TOKEN 사용)
+  // 관리자는 봇 관리자 패널에서 수동으로도 가능
+  // 👥 하인 동기화 (다른 유저 하인 감지)
+  setTimeout(() => { if (typeof startServantSync === 'function') startServantSync(); }, 3000);
   // 서버 전환 시 이전 채널에서 완전 이탈 처리
   if (!isOffline && supabase && player) {
     const prevChannel = supabase._channelId;
