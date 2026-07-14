@@ -1310,63 +1310,122 @@ window.toggleAllAgree = function(el) {
 
 // ═══════════════════════════════════════════════════════════
 // 채팅/닉네임/팀명 검열 필터 (금칙어·개인정보·광고 차단)
+// 강화 버전: 초성/자음/우회 패턴 차단
 // ═══════════════════════════════════════════════════════════
 window._BAD_WORDS = [
-  // 욕설 (일부만 예시, 필요시 추가)
-  '시발','씨발','ㅅㅂ','ㅆㅂ','병신','ㅄ','ㅂㅅ','존나','좆','ㅈㄴ','새끼','ㅅㄲ','개새','썅','미친','ㅁㅊ',
-  '지랄','ㅈㄹ','꺼져','닥쳐','엿먹','fuck','shit','bitch','asshole','dick','pussy',
+  // 욕설 - 완성형
+  '시발','씨발','씨팔','시팔','씨바','시바',
+  '병신','병1신','병시인','ㅄ','ㅂㅅ','병.신',
+  '존나','졸라','좆','좃','존만','좆같','졸ㄴ','존나게',
+  '개새','개색','개쌔','개셰','개시','새끼','새꺄','싸가지','썅','썅놈',
+  '지랄','지럴','ㅈㄹ','미친','미쳤','ㅁㅊ',
+  '꺼져','닥쳐','엿먹','엿드',
+  'fuck','fck','fuk','fuking','fucking','shit','sht','bitch','asshole','dick','pussy','nigger','nigga',
   // 성적/혐오
-  '섹스','sex','야동','자위','창녀','걸레','매춘','포르노','porn','ㅅㅅ',
+  '섹스','sex','야동','자위','창녀','걸레','매춘','포르노','porn','야한',
   // 차별/혐오
-  '한남','한녀','급식충','틀딱','맘충','노슬아치','좌빨','우꼴','전라디언','일베','메갈',
-  // 학폭 관련
-  '왕따','따돌림','빵셔틀','괴롭혀','때려','폭행','자살해','뒤져','뒤져라','뒤져버','죽어','죽여',
+  '한남','한녀','급식충','틀딱','맘충','노슬아치','좌빨','우꼴','전라디언','일베','메갈','짱깨','쪽바리','흑형','짱꼴라',
+  // 학폭
+  '왕따','따돌림','빵셔틀','괴롭혀','때려','폭행','자살해','뒤져','뒤져라','뒤져버','죽어','죽여','죽여버','뒈져','뒈지',
   // 광고/외부 유도
-  '디스코드 오세요','디코 오세요','텔레그램','텔레','카톡','카카오톡 아이디','인스타 팔로우','팔로우해',
+  '디스코드 오세요','디코 오세요','디코와','디코ㄱ','텔레그램','텔레','카톡ID','카톡 아이디','카카오톡 아이디','인스타 팔로우','팔로우해','트위터 팔로우','유튜브 구독',
   // 도박/사기
-  '토토','스포츠토토','바카라','슬롯','환전','충전 이벤트','불법','도박','먹튀',
-];
-window._BAD_REGEX = [
-  /01[016789][-\s]?\d{3,4}[-\s]?\d{4}/g,          // 전화번호
-  /\d{6}[-\s]?\d{7}/g,                              // 주민번호
-  /https?:\/\/[^\s]+/gi,                            // URL
-  /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, // 이메일
-  /디코[\s.]*[a-zA-Z0-9._-]{2,}/gi,                 // 디코 아이디
-  /카톡[\s.:]*[a-zA-Z0-9._-]{2,}/gi,                // 카톡 아이디
+  '토토','스포츠토토','바카라','슬롯','환전','충전 이벤트','불법','도박','먹튀','현금거래','현거래','계정판매',
 ];
 
-// 텍스트 검열: 금지어/개인정보 있으면 { blocked:true, reason } 반환. 아니면 {ok:true, text: 마스킹된 텍스트}
+// 초성 전용 (짧아서 오탐 가능성 있는 건 별도 관리)
+window._BAD_CHOSUNG = [
+  'ㅅㅂ','ㅆㅂ','ㅄ','ㅂㅅ','ㅅㄲ','ㅁㅊ','ㅈㄹ','ㅆㅂㄹㅁ','ㅈㄴ','ㅆㅂㅅ','ㄷㅊ','ㅆㅂ아','ㅅㅂ아',
+  'ㅈㄴㄱ','ㅅㅂㄴ','ㄴㅁㅊ','ㅄㅂ','ㅅㅆㅂ','ㅁㅊㄴ','ㅅㅂㅆ',
+  'ㅁㅊㄷ','ㅍㅅ','ㅈㄹㅁ',
+];
+
+window._BAD_REGEX = [
+  /01[016789][-\s.]?\d{3,4}[-\s.]?\d{4}/g,
+  /\d{6}[-\s]?\d{7}/g,
+  /https?:\/\/[^\s]+/gi,
+  /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
+  /디코[\s.]*[a-zA-Z0-9._-]{2,}/gi,
+  /카톡[\s.:]*[a-zA-Z0-9._-]{2,}/gi,
+  /텔레[그램]*[\s.:]*[a-zA-Z0-9._-]{2,}/gi,
+  /인스타[\s.:@]*[a-zA-Z0-9._-]{2,}/gi,
+];
+
+// 텍스트 정규화: 특수문자/공백/영어 우회 방지
+function _normalizeForCensor(t) {
+  return t
+    .toLowerCase()
+    .normalize('NFKC')
+    // 특수문자·기호로 우회 방지 (씨.발 → 씨발, 시*발 → 시발, 시_발 → 시발)
+    .replace(/[.,!?~\-_*=\/\\|·\s\(\)\[\]<>{}]+/g, '')
+    // 숫자로 우회 (1발, 씨8, ㅅ1발 등)
+    .replace(/0/g,'ㅇ').replace(/1/g,'ㅣ').replace(/2/g,'ㅅ').replace(/3/g,'ㅅ')
+    .replace(/4/g,'ㅅ').replace(/5/g,'ㅅ').replace(/8/g,'ㅂ')
+    // 유사 알파벳
+    .replace(/[si][b][a][l]/g, '시발')
+    .replace(/[b]y[e]ong[s]in/g, '병신');
+}
+
+// 텍스트에서 초성 추출
+function _extractChosung(t) {
+  const CHO = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+  let result = '';
+  for (const ch of t) {
+    const code = ch.charCodeAt(0);
+    if (code >= 0xAC00 && code <= 0xD7A3) {
+      // 한글 완성형 → 초성 추출
+      result += CHO[Math.floor((code - 0xAC00) / 588)];
+    } else if (CHO.includes(ch)) {
+      result += ch;
+    } else {
+      result += ch; // 그대로
+    }
+  }
+  return result;
+}
+
+// 텍스트 검열
 window.censorText = function(raw, opts) {
   opts = opts || {};
   if (typeof raw !== 'string') return { blocked: true, reason: '잘못된 입력' };
   let t = raw.normalize('NFKC');
-  // 자음/모음만 반복 (ㅋㅋㅋㅋㅋ, ㅅㅂㅅㅂ 회피)
-  const compact = t.replace(/\s+/g,'').toLowerCase();
+  // 정규화된 버전으로 완성형 욕설 체크
+  const normalized = _normalizeForCensor(t);
   for (const w of window._BAD_WORDS) {
-    if (compact.includes(w.toLowerCase())) return { blocked: true, reason: '금지어 감지: '+w };
+    if (normalized.includes(_normalizeForCensor(w))) return { blocked: true, reason: '금지어 감지' };
   }
+  // 초성 추출해서 초성 욕 체크
+  const chosung = _extractChosung(t).replace(/\s+/g, '');
+  for (const cw of window._BAD_CHOSUNG) {
+    if (chosung.includes(cw)) return { blocked: true, reason: '초성 욕설 감지' };
+  }
+  // 개인정보/링크 체크
   for (const r of window._BAD_REGEX) {
     if (r.test(t)) return { blocked: true, reason: '개인정보/링크는 보낼 수 없어요' };
     r.lastIndex = 0;
   }
   // 도배 (같은 글자 8회 이상 반복)
   if (/(.)\1{7,}/.test(t)) return { blocked: true, reason: '도배 금지' };
+  // 도배 (같은 단어 3회 이상 반복)
+  if (/(.{2,10})\1{2,}/.test(t)) return { blocked: true, reason: '도배 금지' };
   // 길이
   const max = opts.max || 200;
   if (t.length > max) t = t.slice(0, max);
   return { ok: true, text: t };
 };
 
-// 닉네임/팀명 전용 (더 엄격)
+// 닉네임/팀명/하인이름 전용 (더 엄격)
 window.censorName = function(raw) {
   if (typeof raw !== 'string' || !raw.trim()) return { blocked: true, reason: '이름을 입력하세요' };
   const t = raw.trim();
   if (t.length > 12) return { blocked: true, reason: '12자 이하' };
   const c = window.censorText(t, { max: 12 });
   if (c.blocked) return c;
-  // 운영자 사칭 방지
-  if (/관리자|운영자|admin|GM|모드|mod|공식|official|system|시스템/i.test(t))
+  // 운영자 사칭 방지 (한글/영어 모두)
+  if (/관리자|운영자|admin|GM|모드|mod|공식|official|system|시스템|봇|bot|스태프|staff|noreply/i.test(t))
     return { blocked: true, reason: '운영자 사칭 금지' };
+  // 특수문자 남용
+  if (/[^\w가-힣ㄱ-ㅎㅏ-ㅣ\-]/.test(t)) return { blocked: true, reason: '특수문자 사용 불가' };
   return { ok: true, text: t };
 };
 
@@ -13090,7 +13149,7 @@ window.showSkillEquipMenu = function(skillId, btnEl) {
     const existing = learnedActive[i];
     const row = document.createElement('div');
     row.style.cssText = `padding:8px 12px;cursor:pointer;color:${existing && existing.id === skillId ? '#FFD700' : '#ccc'};border-bottom:1px solid #1c2244;`;
-    row.innerHTML = `슬롯${i+1} [${keyLabel(binds[i])}]${existing ? ' - ' + existing.name : ' (비어있음)'}`;
+    row.innerHTML = `슬롯${i+1} [${keyLabel(binds[i])}]${existing ? ' - ' + _escapeHtml(existing.name) : ' (비어있음)'}`;
     row.onmouseenter = () => row.style.background = 'rgba(255,215,0,0.1)';
     row.onmouseleave = () => row.style.background = '';
     row.onclick = () => {
@@ -16925,9 +16984,17 @@ window.buyServant = function(idx) {
     showNotification('❌ 골드 부족!', { duration: 2000 });
     return;
   }
-  // 이름 지정
+  // 이름 지정 + 검열
+  let finalName = sv.defaultName;
   const customName = prompt(`${sv.defaultName}의 이름을 정해주세요 (취소=기본이름):`, sv.defaultName);
-  const finalName = (customName || sv.defaultName).slice(0, 20);
+  if (customName && customName.trim()) {
+    const check = window.censorName ? window.censorName(customName.trim()) : { ok: true, text: customName };
+    if (check.blocked) {
+      showNotification('❌ ' + check.reason, { duration: 2500 });
+      return;
+    }
+    finalName = check.text.slice(0, 12);
+  }
   // 골드 차감
   player.gold -= sv.price;
   // 상점 재고에서 제거
@@ -16973,12 +17040,19 @@ function servantMineNearby(s) {
   if (!player) return false;
   const cx = Math.floor((s.x + s.w/2) / TILE);
   const cy = Math.floor((s.y + s.h/2) / TILE);
+  // 소유자 방향으로 우선 캐기 (벽 넘어오게)
+  const ownerDir = player.x > s.x ? 1 : -1;
   const positions = [
-    [cx + s.dir, cy],
-    [cx + s.dir, cy - 1],
-    [cx, cy - 1],
-    [cx, cy + 1],
-    [cx + s.dir, cy + 1],
+    [cx + s.dir, cy],       // 앞
+    [cx + s.dir, cy - 1],   // 앞 위
+    [cx + s.dir, cy + 1],   // 앞 발밑
+    [cx + s.dir, cy - 2],   // 앞 위위 (높은 벽)
+    [cx + ownerDir, cy],    // 소유자 방향 (다르면)
+    [cx + ownerDir, cy - 1],
+    [cx + ownerDir, cy - 2],
+    [cx, cy - 1],           // 머리
+    [cx, cy - 2],           // 머리 위위
+    [cx, cy + 1],           // 발밑
   ];
   for (const [tx, ty] of positions) {
     if (tx < 0 || tx >= WORLD_W || ty < 0 || ty >= WORLD_H) continue;
@@ -17027,8 +17101,8 @@ function updateServants() {
     const dist = Math.hypot(dx, dy);
     const mode = s._mode || 'follow';
 
-    // ─── 소유자와 너무 멀면 무조건 텔레포트 (15칸 이상) ───
-    if (dist > TILE * 15) {
+    // ─── 소유자와 너무 멀면 무조건 텔레포트 (10칸 이상) ───
+    if (dist > TILE * 10) {
       s.x = target.x + (Math.random() * 60 - 30);
       s.y = target.y - 30;
       s.vx = 0; s.vy = 0;
@@ -17110,13 +17184,17 @@ function updateServants() {
     const midY = s.y + s.h / 2;
     const edgeX = s.vx > 0 ? newX + s.w : newX;
     if (Math.abs(s.vx) > 0.1 && (solidAt(edgeX, midY) || solidAt(edgeX, s.y + 4))) {
-      // 벽 만나면 자동 채집!
-      if (servantMineNearby(s)) {
+      // 벽 만나면 여러 번 캐서 뚫기 (최대 3번)
+      let mined = false;
+      for (let i = 0; i < 3; i++) {
+        if (servantMineNearby(s)) { mined = true; break; }
+      }
+      if (mined) {
         s.vx = 0;
       } else {
         s.vx = 0;
         if (mode === 'mine' && s._mineDir) s._mineDir *= -1;
-        if (s.onGround) { s.vy = -8; s.onGround = false; }
+        if (s.onGround) { s.vy = -9; s.onGround = false; }
       }
     } else s.x = newX;
 
@@ -20122,8 +20200,8 @@ window.showFriends = function() {
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:9px;margin-bottom:6px;border:2px solid ${online?'#46e07a':'#222a44'};background:#10162e;">
       <span style="font-size:8px;color:${online?'#9affc0':'#7788aa'};">${dot}${_escapeHtml(n)}</span>
       <span style="display:flex;gap:5px;">
-        ${online?`<button onclick="sendWhisperPrompt('${_escapeHtml(n)}')" style="font-family:'Press Start 2P',monospace;font-size:6px;padding:5px 7px;border:1px solid #FF66CC;background:#0a0c1e;color:#FF99DD;cursor:pointer;">귀속말</button>`:''}
-        <button onclick="toggleFriend('${_escapeHtml(n)}')" style="font-family:'Press Start 2P',monospace;font-size:6px;padding:5px 7px;border:1px solid #FF4466;background:#0a0c1e;color:#FF6688;cursor:pointer;">삭제</button>
+        ${online?`<button onclick="sendWhisperPrompt('${_escapeAttr(n)}')" style="font-family:'Press Start 2P',monospace;font-size:6px;padding:5px 7px;border:1px solid #FF66CC;background:#0a0c1e;color:#FF99DD;cursor:pointer;">귀속말</button>`:''}
+        <button onclick="toggleFriend('${_escapeAttr(n)}')" style="font-family:'Press Start 2P',monospace;font-size:6px;padding:5px 7px;border:1px solid #FF4466;background:#0a0c1e;color:#FF6688;cursor:pointer;">삭제</button>
       </span></div>`;
   }).join('') : `<div style="font-size:8px;color:#667;text-align:center;padding:24px;">친구가 없습니다.<br><br>다른 플레이어를 우클릭 → 친구 추가</div>`;
   panel.innerHTML = `<div class="panel-header"><span class="panel-title">친구 (${f.length})</span><button class="panel-close" onclick="closePanel()">✕</button></div>
@@ -22478,8 +22556,11 @@ function showPetPanel() {
 
 function addChatMessage(name, text, color = '#fff') {
   const chatDiv = document.getElementById('chatMessages');
+  if (!chatDiv) return;
   const msg = document.createElement('div');
-  msg.innerHTML = `<span style="color:${color}">[${name}]</span> ${text}`;
+  // ⚠️ XSS 방지: name과 text는 반드시 escape, color는 화이트리스트 검증
+  const safeColor = /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : '#fff';
+  msg.innerHTML = `<span style="color:${safeColor}">[${_escapeHtml(name)}]</span> ${_escapeHtml(text)}`;
   chatDiv.appendChild(msg);
   while (chatDiv.children.length > 50) chatDiv.removeChild(chatDiv.firstChild);
   chatDiv.scrollTop = chatDiv.scrollHeight;
@@ -22487,8 +22568,38 @@ function addChatMessage(name, text, color = '#fff') {
 
 // HTML 이스케이프 (채팅 안전)
 function _escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  return String(s).replace(/[&<>"'`\/]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;','/':'&#47;' }[c]));
 }
+window._escapeHtml = _escapeHtml;
+
+// ⚠️ HTML attribute 안에 삽입할 때 (더 엄격, onclick 안에도 안전)
+function _escapeAttr(s) {
+  return String(s).replace(/[^a-zA-Z0-9가-힣]/g, c => '&#' + c.charCodeAt(0) + ';');
+}
+window._escapeAttr = _escapeAttr;
+
+// ⚠️ 서버 응답도 신뢰하지 않음 - JSON 필드 검증
+window._sanitize = function(v, type, opts) {
+  opts = opts || {};
+  if (type === 'string') {
+    if (typeof v !== 'string') return '';
+    const max = opts.max || 200;
+    return v.slice(0, max);
+  }
+  if (type === 'number') {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(opts.min || -Infinity, Math.min(opts.max || Infinity, n));
+  }
+  if (type === 'int') {
+    const n = parseInt(v, 10);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(opts.min || -Infinity, Math.min(opts.max || Infinity, n));
+  }
+  if (type === 'bool') return !!v;
+  if (type === 'array') return Array.isArray(v) ? v : [];
+  return v;
+};
 
 // 채팅 한 줄 렌더 ({팀}{이름} 내용 포맷, 팀챗/전챗 구분)
 function renderChatLine(scope, teamTag, name, text) {
