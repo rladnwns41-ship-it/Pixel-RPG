@@ -59,6 +59,17 @@ function makeToken(uid) { const t = crypto.randomBytes(24).toString('hex'); TOKE
 function tokenUser(t) { const s = TOKENS.get(t); if (!s || s.exp < Date.now()) { TOKENS.delete(t); return null; } return s.uid; }
 function validId(id) { return typeof id === 'string' && /^[a-zA-Z0-9]{4,16}$/.test(id); }
 function safeStr(v, max) { return typeof v === 'string' ? v.slice(0, max) : ''; }
+// Firebase 경로/키 안전 (특수문자 차단)
+function safeFirebaseKey(v) {
+  if (typeof v !== 'string') return '';
+  // Firebase는 '.', '#', '$', '[', ']', '/' 사용 불가
+  return v.replace(/[.#$\[\]\/\\]/g, '').slice(0, 40);
+}
+// 위험 문자 완전 제거 (Path Traversal 등)
+function sanitizeStrict(v, max) {
+  if (typeof v !== 'string') return '';
+  return v.replace(/[^\w가-힣ㄱ-ㅎㅏ-ㅣ\-\s]/g, '').slice(0, max || 200);
+}
 function clampNum(v, min, max, d) { v = Number(v); if (!Number.isFinite(v)) return d; return Math.max(min, Math.min(max, v)); }
 function rateOk(uid, a, max, win) { const now = Date.now(); if (!RATE.has(uid)) RATE.set(uid, {}); const u = RATE.get(uid); if (!u[a]) u[a] = []; u[a] = u[a].filter(t => now - t < win); if (u[a].length >= max) return false; u[a].push(now); return true; }
 
@@ -499,12 +510,19 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   // MIME 스니핑 차단
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  // Clickjacking 완전 차단
+  res.setHeader('X-Frame-Options', 'DENY');
+  // XSS 감지 (구형 브라우저)
+  res.setHeader('X-XSS-Protection', '1; mode=block');
   // 레퍼러 정보 최소화
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Referrer-Policy', 'no-referrer');
   // 불필요한 브라우저 기능 차단
-  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=()');
-  // HSTS — HTTPS 강제 (1년, 서브도메인 포함). HTTPS 요청에만 의미있음
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=(), usb=(), gyroscope=(), accelerometer=()');
+  // HSTS — HTTPS 강제 (1년, 서브도메인 포함)
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  // Origin 정책
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
   // CSP — 게임이 인라인 스크립트/이벤트를 쓰므로 unsafe-inline 허용하되, 출처는 제한
   res.setHeader('Content-Security-Policy',
     "default-src 'self'; " +
@@ -566,12 +584,33 @@ app.get(/.*/, (req, res) => {
 const server = http.createServer(app);
 // 🔒 전역 에러 핸들러: 스택·풀패스를 클라에 노출하지 않음
 app.use((err, req, res, next) => { console.error('http_err', err && err.message); if (res.headersSent) return next(err); res.status(500).json({ error: 'server_error' }); });
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({
+  server,
+  maxPayload: 64 * 1024,  // 최대 64KB 메시지 (DoS 방지)
+  perMessageDeflate: false, // 압축 폭탄 방지
+});
 
-wss.on('connection', (ws) => {
-  SESSION.set(ws, { user_id: null, room: null });
+wss.on('connection', (ws, req) => {
+  // IP 기반 연결 제한 (동일 IP에서 너무 많은 연결)
+  const ip = req.socket.remoteAddress || 'unknown';
+  const ipConns = Array.from(SESSION.entries()).filter(([, s]) => s.ip === ip).length;
+  if (ipConns > 5) {
+    ws.close(1008, 'too_many_conns');
+    return;
+  }
+  SESSION.set(ws, { user_id: null, room: null, ip, connectedAt: Date.now() });
+
+  // 메시지 처리
   ws.on('message', async (raw) => {
+    // 메시지 크기 재검증 (maxPayload 밖에도)
+    if (!raw || raw.length > 64 * 1024) { try { ws.close(1009, 'msg_too_large'); } catch(e) {} return; }
     let m; try { m = JSON.parse(raw); } catch (e) { return; }
+    // 구조 검증
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return;
+    if (typeof m.t !== 'string' || m.t.length > 32) return;
+    // rid는 문자열/숫자만
+    if (m.rid !== undefined && typeof m.rid !== 'string' && typeof m.rid !== 'number') return;
+
     const reply = (o) => { try { ws.send(JSON.stringify({ ...o, rid: m.rid })); } catch (e) {} };
     const sess = SESSION.get(ws);
     const auth = () => tokenUser(m.token);
