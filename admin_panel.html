@@ -17096,6 +17096,34 @@ function servantPickupNearby(s) {
 function updateServants() {
   if (servants.length === 0) return;
   const g = 0.55;
+
+  // ─── 하인끼리 밀어내기 (겹침 방지) ───
+  for (let i = 0; i < servants.length; i++) {
+    const a = servants[i];
+    if (a.hp <= 0) continue;
+    for (let j = i + 1; j < servants.length; j++) {
+      const b = servants[j];
+      if (b.hp <= 0) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.hypot(dx, dy);
+      const minDist = TILE * 1.2; // 최소 간격
+      if (dist < minDist && dist > 0.1) {
+        // 서로 반대 방향으로 밀어냄
+        const push = (minDist - dist) * 0.3;
+        const nx = dx / dist;
+        const ny = dy / dist;
+        a.x -= nx * push;
+        b.x += nx * push;
+        // Y는 살짝만 (점프 폭발 방지)
+        if (Math.abs(dy) < TILE * 0.5) {
+          a.y -= ny * push * 0.2;
+          b.y += ny * push * 0.2;
+        }
+      }
+    }
+  }
+
   for (const s of servants) {
     if (s.hp <= 0) continue;
     const target = player;
@@ -17105,9 +17133,10 @@ function updateServants() {
     const dist = Math.hypot(dx, dy);
     const mode = s._mode || 'follow';
 
-    // ─── 소유자와 너무 멀면 무조건 텔레포트 (10칸 이상) ───
+    // ─── 소유자와 너무 멀면 무조건 텔레포트 (10칸 이상) + 하인마다 다른 위치로 ───
     if (dist > TILE * 10) {
-      s.x = target.x + (Math.random() * 60 - 30);
+      const angle = (servants.indexOf(s) / servants.length) * Math.PI * 2;
+      s.x = target.x + Math.cos(angle) * TILE * 2 + (Math.random() * 40 - 20);
       s.y = target.y - 30;
       s.vx = 0; s.vy = 0;
       continue;
@@ -17149,8 +17178,18 @@ function updateServants() {
         // 대기: 그냥 멈춤
         s.vx *= 0.5;
       } else {
-        // follow: 근처 대기 + 가끔 채집/픽업
-        s.vx *= 0.7;
+        // follow: 하인마다 다른 위치로 배치 (인덱스 기반 오프셋)
+        const idx = servants.indexOf(s);
+        const targetOffset = (idx - (servants.length - 1) / 2) * TILE * 1.5;
+        const desiredX = target.x + targetOffset;
+        const dxTo = desiredX - s.x;
+        if (Math.abs(dxTo) > TILE * 0.3) {
+          s.vx = Math.sign(dxTo) * s.speed * 0.8;
+          s.dir = dxTo > 0 ? 1 : -1;
+          s.walkFrame++;
+        } else {
+          s.vx *= 0.5;
+        }
         if (Math.random() < 0.04 * (s.mineSpeed || 1)) servantMineNearby(s);
       }
       // 픽업은 모든 모드에서 시도
@@ -24062,15 +24101,20 @@ window.HDMode = {
   colorGrade: true,       // 색상 그레이딩
   // 상태
   weatherType: 'none',    // 'none' | 'rain' | 'snow'
-  _rainDrops: [],
-  _snowFlakes: [],
-  _grainCanvas: null,
+  // 오프스크린 캐시
   _lightCanvas: null,
+  _vignetteCanvas: null,
+  _colorGradeCanvas: null,
+  _lastLightsUpdate: 0,
+  _cachedLights: [],
+  _lastCanvasW: 0,
+  _lastCanvasH: 0,
 
   init() {
-    // 오프스크린 캔버스
     this._grainCanvas = document.createElement('canvas');
     this._lightCanvas = document.createElement('canvas');
+    this._vignetteCanvas = document.createElement('canvas');
+    this._colorGradeCanvas = document.createElement('canvas');
     this._genGrain();
   },
 
@@ -24086,22 +24130,51 @@ window.HDMode = {
     cx.putImageData(img, 0, 0);
   },
 
+  // 비네트 캐시 (한 번만 생성, 리사이즈 시 재생성)
+  _getVignette() {
+    if (this._vignetteCanvas.width !== canvas.width || this._vignetteCanvas.height !== canvas.height) {
+      this._vignetteCanvas.width = canvas.width;
+      this._vignetteCanvas.height = canvas.height;
+      const vc = this._vignetteCanvas.getContext('2d');
+      const vig = vc.createRadialGradient(
+        canvas.width/2, canvas.height/2, canvas.width * 0.35,
+        canvas.width/2, canvas.height/2, canvas.width * 0.75
+      );
+      vig.addColorStop(0, 'rgba(0,0,0,0)');
+      vig.addColorStop(1, 'rgba(0,0,0,0.45)');
+      vc.fillStyle = vig;
+      vc.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    return this._vignetteCanvas;
+  },
+
+  // 색상 그레이딩 캐시
+  _getColorGrade() {
+    if (this._colorGradeCanvas.width !== canvas.width || this._colorGradeCanvas.height !== canvas.height) {
+      this._colorGradeCanvas.width = canvas.width;
+      this._colorGradeCanvas.height = canvas.height;
+      const cc = this._colorGradeCanvas.getContext('2d');
+      const gradient = cc.createLinearGradient(0, 0, 0, canvas.height);
+      gradient.addColorStop(0, 'rgba(120,140,180,0.08)');
+      gradient.addColorStop(1, 'rgba(180,150,100,0.08)');
+      cc.fillStyle = gradient;
+      cc.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    return this._colorGradeCanvas;
+  },
+
   toggle() {
     this.enabled = !this.enabled;
     showNotification(this.enabled ? '✨ HD 모드 ON' : '⚙️ HD 모드 OFF', { duration: 2000 });
   },
 
-  // 낮/밤 시간대 (0~24시)
   getTimeOfDay() {
-    // gameTime을 24시간 사이클로 (10분 = 1일)
-    const dayLen = 600000; // 10분
+    const dayLen = 600000;
     return ((gameTime || 0) % dayLen) / dayLen * 24;
   },
 
-  // 시간대별 화면 색조 반환
   getSkyTint() {
     const h = this.getTimeOfDay();
-    // 새벽(5-7): 주황빛 / 낮(7-17): 없음 / 저녁(17-19): 붉은빛 / 밤(19-5): 파란 어둠
     if (h >= 6 && h < 8) {
       const t = (h - 6) / 2;
       return { r: 255, g: 180 + t*40, b: 130 + t*80, a: 0.15 * (1 - t) };
@@ -24111,20 +24184,21 @@ window.HDMode = {
       const t = (h - 17) / 2;
       return { r: 255, g: 140 - t*40, b: 100 - t*40, a: 0.15 + t*0.1 };
     }
-    // 밤 (19-6)
     return { r: 40, g: 55, b: 100, a: 0.45 };
   },
 
-  // 광원 목록 (플레이어·횃불·용암 등)
+  // 광원 캐시 (100ms마다 갱신, 매 프레임 X)
   _getLightSources() {
+    const now = Date.now();
+    if (now - this._lastLightsUpdate < 100 && this._cachedLights.length > 0) return this._cachedLights;
+    this._lastLightsUpdate = now;
     const lights = [];
     if (player) lights.push({ x: player.x + player.w/2, y: player.y + player.h/2, r: 200, color: '255,240,200' });
-    // 다른 플레이어
     for (const k in (otherPlayers || {})) {
       const op = otherPlayers[k];
       if (op) lights.push({ x: op.x + op.w/2, y: op.y + op.h/2, r: 150, color: '255,240,200' });
     }
-    // 화면 근처 화톳불 타일
+    // 화면 근처 광원 타일 (성능: 화면 범위만)
     if (world && camera && canvas) {
       const startX = Math.max(0, Math.floor(camera.x / TILE) - 1);
       const endX = Math.min(WORLD_W, Math.ceil((camera.x + canvas.width) / TILE) + 1);
@@ -24135,92 +24209,89 @@ window.HDMode = {
         for (let y = startY; y < endY; y++) {
           const t = world[x][y];
           if (t === TILES.TORCH) lights.push({ x: x*TILE+16, y: y*TILE+16, r: 130, color: '255,180,80' });
-          if (t === TILES.LAVA) lights.push({ x: x*TILE+16, y: y*TILE+16, r: 100, color: '255,120,40' });
-          if (t === TILES.FURNACE || t === TILES.CAMPFIRE) lights.push({ x: x*TILE+16, y: y*TILE+16, r: 110, color: '255,150,60' });
+          else if (t === TILES.LAVA) lights.push({ x: x*TILE+16, y: y*TILE+16, r: 100, color: '255,120,40' });
+          else if (t === TILES.FURNACE || t === TILES.CAMPFIRE) lights.push({ x: x*TILE+16, y: y*TILE+16, r: 110, color: '255,150,60' });
         }
       }
     }
+    this._cachedLights = lights;
     return lights;
   },
 
   postProcess() {
     if (!ctx || !canvas) return;
 
-    // ─── 낮/밤 색조 오버레이 ───
-    if (this.dayNight && !oceanMode && !dungeonMode && !spaceMode) {
+    const h = this.getTimeOfDay();
+    const isNight = h >= 19 || h < 6;
+    const isDusk = (h >= 17 && h < 19) || (h >= 6 && h < 8);
+
+    // ─── 낮에는 대부분 스킵 (색상 그레이딩 + 비네트만) ───
+    // 낮/밤 색조는 밤이나 노을 때만 (낮에는 거의 투명이라 스킵)
+    if (this.dayNight && (isNight || isDusk) && !oceanMode && !dungeonMode && !spaceMode) {
       const tint = this.getSkyTint();
-      ctx.save();
-      ctx.globalCompositeOperation = 'multiply';
-      ctx.fillStyle = `rgba(${tint.r},${tint.g},${tint.b},${tint.a})`;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.restore();
+      if (tint.a > 0.03) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.fillStyle = `rgba(${tint.r},${tint.g},${tint.b},${tint.a})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+      }
     }
 
-    // ─── 동적 조명 (밤에만 진짜 어두움 + 광원 주변 밝게) ───
-    if (this.dynamicLight && !dungeonMode && !spaceMode) {
-      const h = this.getTimeOfDay();
-      const darkness = h >= 19 || h < 6 ? 0.65 : (h >= 17 && h < 19 ? (h-17)/2 * 0.65 : (h >= 6 && h < 8 ? (1-(h-6)/2) * 0.65 : 0));
+    // ─── 동적 조명 (밤/노을에만) ───
+    if (this.dynamicLight && (isNight || isDusk) && !dungeonMode && !spaceMode) {
+      const darkness = isNight ? 0.65 : (h >= 17 && h < 19 ? (h-17)/2 * 0.65 : (1-(h-6)/2) * 0.65);
       if (darkness > 0.05) {
-        // 어둠 오버레이 만들기
         const lc = this._lightCanvas;
         if (lc.width !== canvas.width || lc.height !== canvas.height) {
           lc.width = canvas.width; lc.height = canvas.height;
         }
         const lctx = lc.getContext('2d');
+        lctx.clearRect(0, 0, canvas.width, canvas.height);
         lctx.fillStyle = `rgba(10,15,30,${darkness})`;
         lctx.fillRect(0, 0, canvas.width, canvas.height);
-        // 광원 뚫기 (destination-out으로 어둠 지우기)
+        // 광원 뚫기
         lctx.globalCompositeOperation = 'destination-out';
-        for (const L of this._getLightSources()) {
+        const lights = this._getLightSources();
+        for (const L of lights) {
           const sx = L.x - camera.x, sy = L.y - camera.y;
-          if (sx < -L.r || sx > canvas.width + L.r) continue;
+          if (sx < -L.r || sx > canvas.width + L.r || sy < -L.r || sy > canvas.height + L.r) continue;
           const grad = lctx.createRadialGradient(sx, sy, 0, sx, sy, L.r);
           grad.addColorStop(0, 'rgba(255,255,255,0.95)');
           grad.addColorStop(0.4, 'rgba(255,255,255,0.6)');
           grad.addColorStop(1, 'rgba(255,255,255,0)');
           lctx.fillStyle = grad;
-          lctx.beginPath(); lctx.arc(sx, sy, L.r, 0, Math.PI*2); lctx.fill();
+          lctx.fillRect(sx - L.r, sy - L.r, L.r * 2, L.r * 2);
         }
+        // 광원 색조 (원하면 자잘한 노란빛)
         lctx.globalCompositeOperation = 'source-over';
-        // 광원 색조 (따뜻한 빛)
-        for (const L of this._getLightSources()) {
+        for (const L of lights) {
           const sx = L.x - camera.x, sy = L.y - camera.y;
           if (sx < -L.r || sx > canvas.width + L.r) continue;
           const grad = lctx.createRadialGradient(sx, sy, 0, sx, sy, L.r * 0.7);
           grad.addColorStop(0, `rgba(${L.color},0.15)`);
           grad.addColorStop(1, `rgba(${L.color},0)`);
           lctx.fillStyle = grad;
-          lctx.beginPath(); lctx.arc(sx, sy, L.r * 0.7, 0, Math.PI*2); lctx.fill();
+          lctx.fillRect(sx - L.r*0.7, sy - L.r*0.7, L.r*1.4, L.r*1.4);
         }
         ctx.drawImage(lc, 0, 0);
       }
     }
 
-    // ─── 색상 그레이딩 (약간 채도 + 대비) ───
+    // ─── 색상 그레이딩 (캐시된 이미지 사용) ───
     if (this.colorGrade) {
       ctx.save();
       ctx.globalCompositeOperation = 'overlay';
-      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-      gradient.addColorStop(0, 'rgba(120,140,180,0.08)');   // 하늘쪽 살짝 파랑
-      gradient.addColorStop(1, 'rgba(180,150,100,0.08)');   // 땅쪽 살짝 따뜻함
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(this._getColorGrade(), 0, 0);
       ctx.restore();
     }
 
-    // ─── 비네트 (가장자리 어두움) ───
+    // ─── 비네트 (캐시된 이미지) ───
     if (this.vignette) {
-      const vig = ctx.createRadialGradient(
-        canvas.width/2, canvas.height/2, canvas.width * 0.35,
-        canvas.width/2, canvas.height/2, canvas.width * 0.75
-      );
-      vig.addColorStop(0, 'rgba(0,0,0,0)');
-      vig.addColorStop(1, 'rgba(0,0,0,0.45)');
-      ctx.fillStyle = vig;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(this._getVignette(), 0, 0);
     }
 
-    // ─── 날씨 (비/눈) ───
+    // ─── 날씨 ───
     if (this.weather && this.weatherType !== 'none' && !oceanMode && !dungeonMode && !spaceMode) {
       if (this.weatherType === 'rain') this._drawRain();
       else if (this.weatherType === 'snow') this._drawSnow();
@@ -24231,10 +24302,8 @@ window.HDMode = {
       ctx.save();
       ctx.globalAlpha = 0.15;
       ctx.globalCompositeOperation = 'overlay';
-      // 랜덤 오프셋으로 매 프레임 다르게
       const ox = -Math.floor(Math.random() * 256);
       const oy = -Math.floor(Math.random() * 256);
-      // 타일로 반복
       for (let x = ox; x < canvas.width; x += 256) {
         for (let y = oy; y < canvas.height; y += 256) {
           ctx.drawImage(this._grainCanvas, x, y);
