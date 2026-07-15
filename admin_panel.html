@@ -13286,6 +13286,7 @@ function showSettings() {
       <div style="display:flex;flex-direction:column;gap:6px;padding:6px 4px;">
         <button onclick="closePanel();showNotification('🌊 바다(물 근처)에서 F키를 눌러 잠수하세요!',{duration:3500});" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#0a1a3a,#050a20);border:2px solid #4488ff;color:#88ccff;cursor:pointer;">🌊 심해 잠수 방법</button>
         <button onclick="closePanel();openServantShop();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#2a1a08,#150a04);border-top:2px solid #886644;border-left:2px solid #886644;border-bottom:2px solid #201004;border-right:2px solid #201004;color:#ffcc88;cursor:pointer;">👥 하인 고용소</button>
+        <button onclick="closePanel();window.HDMode.openPanel();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#2a0a3a,#150520);border-top:2px solid #aa66cc;border-left:2px solid #aa66cc;border-bottom:2px solid #200a30;border-right:2px solid #200a30;color:#dd88ff;cursor:pointer;">✨ HD 모드 설정</button>
         <button onclick="closePanel();showArenaRanking();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#2a0a2a,#150515);border:2px solid #ff4488;color:#ff88cc;cursor:pointer;">⚔️ PVP 아레나 (1v1)</button>
         <button onclick="closePanel();openMarketNPC();" style="font-family:'Press Start 2P',monospace;font-size:8px;padding:10px;background:linear-gradient(180deg,#2a1a05,#150a02);border:2px solid #ffaa44;color:#ffcc88;cursor:pointer;">💹 방랑 상인 (동적 시세)</button>
       </div>
@@ -22633,6 +22634,11 @@ function sendChat(rawText) {
     else addChatMessage('시스템', '❌ 하인 고용소 기능 없음', '#FF8888');
     return;
   }
+  // ─── HD 모드 ───
+  if (text === '/hd' || text === '/HD' || text === '/고사양') {
+    if (window.HDMode) window.HDMode.openPanel();
+    return;
+  }
   // ─── 하인 명령어 ───
   if (text.startsWith('/하인 ') || text === '/따라와' || text === '/채집' || text === '/전투' || text === '/대기' || text === '/저장' || text === '/소환') {
     const cmd = text === '/따라와' ? 'follow'
@@ -24033,9 +24039,329 @@ function gameLoop(timestamp) {
     ctx.fillText('FPS ' + _lastFps, 12, canvas.height - 12);
   }
 
+  // ✨ 고사양 모드 후처리 (조명·색조·비네트·날씨)
+  if (window.HDMode && window.HDMode.enabled) window.HDMode.postProcess();
+
   _gameLoopRafId = requestAnimationFrame(gameLoop);
 }
-// ---- MINIGAME SYSTEM ----
+// ═══════════════════════════════════════════════════════════════════════════
+// ✨ HD 모드 — 고사양 후처리 (조명·낮밤·비네트·날씨·필름그레인·블룸)
+// ═══════════════════════════════════════════════════════════════════════════
+window.HDMode = {
+  enabled: false,
+  // 개별 옵션
+  dynamicLight: true,     // 광원 주변만 밝게
+  dayNight: true,         // 낮/밤 시간 사이클
+  vignette: true,         // 화면 가장자리 어두움
+  bloom: true,            // 밝은 물체 빛번짐
+  weather: true,          // 비/눈 파티클
+  grain: false,           // 필름 그레인
+  colorGrade: true,       // 색상 그레이딩
+  // 상태
+  weatherType: 'none',    // 'none' | 'rain' | 'snow'
+  _rainDrops: [],
+  _snowFlakes: [],
+  _grainCanvas: null,
+  _lightCanvas: null,
+
+  init() {
+    // 오프스크린 캔버스
+    this._grainCanvas = document.createElement('canvas');
+    this._lightCanvas = document.createElement('canvas');
+    this._genGrain();
+  },
+
+  _genGrain() {
+    const c = this._grainCanvas;
+    c.width = 256; c.height = 256;
+    const cx = c.getContext('2d');
+    const img = cx.createImageData(256, 256);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = Math.random() * 255;
+      img.data[i] = v; img.data[i+1] = v; img.data[i+2] = v; img.data[i+3] = 30;
+    }
+    cx.putImageData(img, 0, 0);
+  },
+
+  toggle() {
+    this.enabled = !this.enabled;
+    showNotification(this.enabled ? '✨ HD 모드 ON' : '⚙️ HD 모드 OFF', { duration: 2000 });
+  },
+
+  // 낮/밤 시간대 (0~24시)
+  getTimeOfDay() {
+    // gameTime을 24시간 사이클로 (10분 = 1일)
+    const dayLen = 600000; // 10분
+    return ((gameTime || 0) % dayLen) / dayLen * 24;
+  },
+
+  // 시간대별 화면 색조 반환
+  getSkyTint() {
+    const h = this.getTimeOfDay();
+    // 새벽(5-7): 주황빛 / 낮(7-17): 없음 / 저녁(17-19): 붉은빛 / 밤(19-5): 파란 어둠
+    if (h >= 6 && h < 8) {
+      const t = (h - 6) / 2;
+      return { r: 255, g: 180 + t*40, b: 130 + t*80, a: 0.15 * (1 - t) };
+    }
+    if (h >= 8 && h < 17) return { r: 255, g: 255, b: 240, a: 0.02 };
+    if (h >= 17 && h < 19) {
+      const t = (h - 17) / 2;
+      return { r: 255, g: 140 - t*40, b: 100 - t*40, a: 0.15 + t*0.1 };
+    }
+    // 밤 (19-6)
+    return { r: 40, g: 55, b: 100, a: 0.45 };
+  },
+
+  // 광원 목록 (플레이어·횃불·용암 등)
+  _getLightSources() {
+    const lights = [];
+    if (player) lights.push({ x: player.x + player.w/2, y: player.y + player.h/2, r: 200, color: '255,240,200' });
+    // 다른 플레이어
+    for (const k in (otherPlayers || {})) {
+      const op = otherPlayers[k];
+      if (op) lights.push({ x: op.x + op.w/2, y: op.y + op.h/2, r: 150, color: '255,240,200' });
+    }
+    // 화면 근처 화톳불 타일
+    if (world && camera && canvas) {
+      const startX = Math.max(0, Math.floor(camera.x / TILE) - 1);
+      const endX = Math.min(WORLD_W, Math.ceil((camera.x + canvas.width) / TILE) + 1);
+      const startY = Math.max(0, Math.floor(camera.y / TILE) - 1);
+      const endY = Math.min(WORLD_H, Math.ceil((camera.y + canvas.height) / TILE) + 1);
+      for (let x = startX; x < endX; x++) {
+        if (!world[x]) continue;
+        for (let y = startY; y < endY; y++) {
+          const t = world[x][y];
+          if (t === TILES.TORCH) lights.push({ x: x*TILE+16, y: y*TILE+16, r: 130, color: '255,180,80' });
+          if (t === TILES.LAVA) lights.push({ x: x*TILE+16, y: y*TILE+16, r: 100, color: '255,120,40' });
+          if (t === TILES.FURNACE || t === TILES.CAMPFIRE) lights.push({ x: x*TILE+16, y: y*TILE+16, r: 110, color: '255,150,60' });
+        }
+      }
+    }
+    return lights;
+  },
+
+  postProcess() {
+    if (!ctx || !canvas) return;
+
+    // ─── 낮/밤 색조 오버레이 ───
+    if (this.dayNight && !oceanMode && !dungeonMode && !spaceMode) {
+      const tint = this.getSkyTint();
+      ctx.save();
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = `rgba(${tint.r},${tint.g},${tint.b},${tint.a})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
+    }
+
+    // ─── 동적 조명 (밤에만 진짜 어두움 + 광원 주변 밝게) ───
+    if (this.dynamicLight && !dungeonMode && !spaceMode) {
+      const h = this.getTimeOfDay();
+      const darkness = h >= 19 || h < 6 ? 0.65 : (h >= 17 && h < 19 ? (h-17)/2 * 0.65 : (h >= 6 && h < 8 ? (1-(h-6)/2) * 0.65 : 0));
+      if (darkness > 0.05) {
+        // 어둠 오버레이 만들기
+        const lc = this._lightCanvas;
+        if (lc.width !== canvas.width || lc.height !== canvas.height) {
+          lc.width = canvas.width; lc.height = canvas.height;
+        }
+        const lctx = lc.getContext('2d');
+        lctx.fillStyle = `rgba(10,15,30,${darkness})`;
+        lctx.fillRect(0, 0, canvas.width, canvas.height);
+        // 광원 뚫기 (destination-out으로 어둠 지우기)
+        lctx.globalCompositeOperation = 'destination-out';
+        for (const L of this._getLightSources()) {
+          const sx = L.x - camera.x, sy = L.y - camera.y;
+          if (sx < -L.r || sx > canvas.width + L.r) continue;
+          const grad = lctx.createRadialGradient(sx, sy, 0, sx, sy, L.r);
+          grad.addColorStop(0, 'rgba(255,255,255,0.95)');
+          grad.addColorStop(0.4, 'rgba(255,255,255,0.6)');
+          grad.addColorStop(1, 'rgba(255,255,255,0)');
+          lctx.fillStyle = grad;
+          lctx.beginPath(); lctx.arc(sx, sy, L.r, 0, Math.PI*2); lctx.fill();
+        }
+        lctx.globalCompositeOperation = 'source-over';
+        // 광원 색조 (따뜻한 빛)
+        for (const L of this._getLightSources()) {
+          const sx = L.x - camera.x, sy = L.y - camera.y;
+          if (sx < -L.r || sx > canvas.width + L.r) continue;
+          const grad = lctx.createRadialGradient(sx, sy, 0, sx, sy, L.r * 0.7);
+          grad.addColorStop(0, `rgba(${L.color},0.15)`);
+          grad.addColorStop(1, `rgba(${L.color},0)`);
+          lctx.fillStyle = grad;
+          lctx.beginPath(); lctx.arc(sx, sy, L.r * 0.7, 0, Math.PI*2); lctx.fill();
+        }
+        ctx.drawImage(lc, 0, 0);
+      }
+    }
+
+    // ─── 색상 그레이딩 (약간 채도 + 대비) ───
+    if (this.colorGrade) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'overlay';
+      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      gradient.addColorStop(0, 'rgba(120,140,180,0.08)');   // 하늘쪽 살짝 파랑
+      gradient.addColorStop(1, 'rgba(180,150,100,0.08)');   // 땅쪽 살짝 따뜻함
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
+    }
+
+    // ─── 비네트 (가장자리 어두움) ───
+    if (this.vignette) {
+      const vig = ctx.createRadialGradient(
+        canvas.width/2, canvas.height/2, canvas.width * 0.35,
+        canvas.width/2, canvas.height/2, canvas.width * 0.75
+      );
+      vig.addColorStop(0, 'rgba(0,0,0,0)');
+      vig.addColorStop(1, 'rgba(0,0,0,0.45)');
+      ctx.fillStyle = vig;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // ─── 날씨 (비/눈) ───
+    if (this.weather && this.weatherType !== 'none' && !oceanMode && !dungeonMode && !spaceMode) {
+      if (this.weatherType === 'rain') this._drawRain();
+      else if (this.weatherType === 'snow') this._drawSnow();
+    }
+
+    // ─── 필름 그레인 ───
+    if (this.grain && this._grainCanvas) {
+      ctx.save();
+      ctx.globalAlpha = 0.15;
+      ctx.globalCompositeOperation = 'overlay';
+      // 랜덤 오프셋으로 매 프레임 다르게
+      const ox = -Math.floor(Math.random() * 256);
+      const oy = -Math.floor(Math.random() * 256);
+      // 타일로 반복
+      for (let x = ox; x < canvas.width; x += 256) {
+        for (let y = oy; y < canvas.height; y += 256) {
+          ctx.drawImage(this._grainCanvas, x, y);
+        }
+      }
+      ctx.restore();
+    }
+  },
+
+  _drawRain() {
+    // 비 파티클 (200개 유지)
+    while (this._rainDrops.length < 200) {
+      this._rainDrops.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        speed: 12 + Math.random() * 8,
+        length: 10 + Math.random() * 8,
+      });
+    }
+    ctx.strokeStyle = 'rgba(180,200,240,0.55)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (const d of this._rainDrops) {
+      d.y += d.speed;
+      d.x -= 2;   // 살짝 대각선
+      if (d.y > canvas.height) { d.y = -20; d.x = Math.random() * canvas.width + 50; }
+      ctx.moveTo(d.x, d.y);
+      ctx.lineTo(d.x - 2, d.y + d.length);
+    }
+    ctx.stroke();
+  },
+
+  _drawSnow() {
+    while (this._snowFlakes.length < 150) {
+      this._snowFlakes.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        vy: 0.5 + Math.random() * 1.5,
+        vx: (Math.random() - 0.5) * 0.5,
+        size: 1 + Math.random() * 2,
+      });
+    }
+    ctx.fillStyle = 'rgba(240,250,255,0.85)';
+    for (const f of this._snowFlakes) {
+      f.y += f.vy;
+      f.x += f.vx + Math.sin(f.y * 0.02) * 0.3;
+      if (f.y > canvas.height) { f.y = -10; f.x = Math.random() * canvas.width; }
+      ctx.beginPath(); ctx.arc(f.x, f.y, f.size, 0, Math.PI*2); ctx.fill();
+    }
+  },
+
+  // 설정 UI
+  openPanel() {
+    const overlay = document.createElement('div');
+    overlay.className = 'pixel-modal-overlay';
+    overlay.onmousedown = (e) => { if (e.target === overlay) overlay.remove(); };
+    const opt = (key, label) => `
+      <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+        <label style="flex:1; font-size:7px; color:#aab4d0;">${label}</label>
+        <button onclick="window.HDMode.${key}=!window.HDMode.${key}; document.querySelectorAll('.pixel-modal-overlay').forEach(el=>{if(el.querySelector('.panel-title')?.textContent?.includes('HD'))el.remove();}); window.HDMode.openPanel();"
+          style="font-family:inherit; font-size:7px; padding:4px 10px; cursor:pointer;
+          background:${window.HDMode[key]?'#0a2a10':'#200a10'};
+          border:2px solid ${window.HDMode[key]?'#66aa66':'#aa6666'};
+          color:${window.HDMode[key]?'#88ff88':'#ff8888'};">${window.HDMode[key]?'ON':'OFF'}</button>
+      </div>`;
+    overlay.innerHTML = `
+      <div class="pixel-modal" style="width: min(440px, 92vw); max-height: 90vh; display:flex; flex-direction:column;">
+        <div class="panel-header">
+          <span class="panel-title">✨ HD 모드 설정</span>
+          <button class="panel-close" onclick="this.closest('.pixel-modal-overlay').remove()">✕</button>
+        </div>
+        <div class="panel-body" style="padding: 14px; overflow-y: auto; font-family:'Press Start 2P',monospace;">
+          <!-- 전체 토글 -->
+          <div style="padding:12px; background:linear-gradient(180deg,#1a1a2e,#0a0a1e); border:2px solid ${this.enabled?'#66aa66':'#aa6666'}; margin-bottom:14px; text-align:center;">
+            <div style="font-size:11px; color:${this.enabled?'#88ff88':'#ff8888'}; margin-bottom:6px;">${this.enabled?'✨ HD 모드 활성':'⚙️ HD 모드 비활성'}</div>
+            <button onclick="window.HDMode.toggle(); document.querySelectorAll('.pixel-modal-overlay').forEach(el=>{if(el.querySelector('.panel-title')?.textContent?.includes('HD'))el.remove();}); window.HDMode.openPanel();"
+              style="font-family:inherit; font-size:9px; padding:8px 24px; cursor:pointer;
+              background:${this.enabled?'#0a2a10':'#0a1a3a'};
+              border-top:2px solid ${this.enabled?'#66aa66':'#4488cc'};
+              border-left:2px solid ${this.enabled?'#66aa66':'#4488cc'};
+              border-bottom:2px solid #041004;
+              border-right:2px solid #041004;
+              color:${this.enabled?'#88ff88':'#88ccff'};">${this.enabled?'OFF로 변경':'ON으로 변경'}</button>
+          </div>
+
+          <!-- 개별 옵션 -->
+          <div style="padding:10px; background:rgba(10,14,30,0.6); border:1px solid #1c2244; margin-bottom:10px;">
+            <div style="font-size:8px; color:#ffd24a; margin-bottom:8px;">🎨 세부 옵션</div>
+            ${opt('dynamicLight', '동적 조명 (밤에 광원)')}
+            ${opt('dayNight', '낮/밤 사이클')}
+            ${opt('vignette', '비네트 (가장자리 어둡게)')}
+            ${opt('colorGrade', '색상 그레이딩')}
+            ${opt('bloom', '블룸 (빛 번짐)')}
+            ${opt('grain', '필름 그레인 (질감)')}
+          </div>
+
+          <!-- 날씨 -->
+          <div style="padding:10px; background:rgba(10,14,30,0.6); border:1px solid #1c2244;">
+            <div style="font-size:8px; color:#ffd24a; margin-bottom:8px;">🌤️ 날씨</div>
+            <div style="display:flex; gap:6px;">
+              <button onclick="window.HDMode.weatherType='none'; document.querySelectorAll('.pixel-modal-overlay').forEach(el=>{if(el.querySelector('.panel-title')?.textContent?.includes('HD'))el.remove();}); window.HDMode.openPanel();"
+                style="flex:1; font-family:inherit; font-size:7px; padding:8px; cursor:pointer;
+                background:${this.weatherType==='none'?'#0a2a10':'#1a1a2e'};
+                border:2px solid ${this.weatherType==='none'?'#66aa66':'#445'};
+                color:${this.weatherType==='none'?'#88ff88':'#aab'};">☀️ 맑음</button>
+              <button onclick="window.HDMode.weatherType='rain'; document.querySelectorAll('.pixel-modal-overlay').forEach(el=>{if(el.querySelector('.panel-title')?.textContent?.includes('HD'))el.remove();}); window.HDMode.openPanel();"
+                style="flex:1; font-family:inherit; font-size:7px; padding:8px; cursor:pointer;
+                background:${this.weatherType==='rain'?'#0a1a3a':'#1a1a2e'};
+                border:2px solid ${this.weatherType==='rain'?'#4488cc':'#445'};
+                color:${this.weatherType==='rain'?'#88ccff':'#aab'};">🌧️ 비</button>
+              <button onclick="window.HDMode.weatherType='snow'; document.querySelectorAll('.pixel-modal-overlay').forEach(el=>{if(el.querySelector('.panel-title')?.textContent?.includes('HD'))el.remove();}); window.HDMode.openPanel();"
+                style="flex:1; font-family:inherit; font-size:7px; padding:8px; cursor:pointer;
+                background:${this.weatherType==='snow'?'#1a2a3a':'#1a1a2e'};
+                border:2px solid ${this.weatherType==='snow'?'#88ccdd':'#445'};
+                color:${this.weatherType==='snow'?'#ddeeff':'#aab'};">❄️ 눈</button>
+            </div>
+          </div>
+
+          <div style="font-size:6.5px; color:#5a628f; margin-top:10px; line-height:1.7; text-align:center;">
+            HD 모드는 FPS를 낮출 수 있습니다.<br>
+            컴퓨터가 느리면 개별 옵션을 하나씩 꺼보세요.
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+  },
+};
+window.HDMode.init();
+
+
 let _isMinigameServer = false;
 let mgState = null; // null = 대기, object = 게임 진행중
 
