@@ -23950,7 +23950,7 @@ function gameLoop(timestamp) {
   if (typeof checkOceanEntryPrompt === 'function' && frameCount % 30 === 0) checkOceanEntryPrompt();
   if (typeof updateBots === 'function') updateBots();
   if (typeof broadcastBots === 'function' && frameCount % 10 === 0) broadcastBots();
-  if (typeof updateServants === 'function') updateServants();
+  if (typeof updateServants === 'function') try { updateServants(); } catch(e) { console.warn('updateServants err:', e); }
   if (typeof broadcastServants === 'function' && frameCount % 10 === 0) broadcastServants();
   // 저사양 모드: 물/낮밤 갱신을 격프레임으로 (시각 차이 거의 없음, CPU 절약)
   if (!_perfLow || frameCount % 2 === 0) { updateDayNight(); updateWater(); }
