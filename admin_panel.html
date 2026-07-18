@@ -2006,13 +2006,23 @@ class FirebaseClient {
   // ── 시체상자 영구 저장 (모든 플레이어 공유) ──
   async saveCorpseDB(worldId, corpse) {
     const wid = worldId || 'main';
+    // 아이템 정제 (순환 참조 방지)
+    const safeItems = (corpse.items || []).map(it => {
+      if (!it || typeof it !== 'object') return null;
+      const safe = {
+        id: typeof it.id === 'string' ? it.id : String(it.id || 'unknown'),
+        count: Math.max(1, Math.floor(Number(it.count) || 1))
+      };
+      if (typeof it.durability === 'number') safe.durability = it.durability;
+      return safe;
+    }).filter(Boolean);
     if (typeof NET !== 'undefined' && NET.ready && NET.token) {
-      try { NET.ws.send(JSON.stringify({ t: 'corpse_set', token: NET.token, wid, corpse: { id: corpse.id, ownerName: corpse.ownerName, x: corpse.x, y: corpse.y, spawnedAt: corpse.spawnedAt, items: corpse.items || [] } })); return; } catch (e) {}
+      try { NET.ws.send(JSON.stringify({ t: 'corpse_set', token: NET.token, wid, corpse: { id: corpse.id, ownerName: corpse.ownerName, x: corpse.x, y: corpse.y, spawnedAt: corpse.spawnedAt, items: safeItems } })); return; } catch (e) {}
     }
     try { await this.db.ref(`corpses/${wid}/${corpse.id}`).set({
       id: corpse.id, ownerName: corpse.ownerName,
       x: corpse.x, y: corpse.y, spawnedAt: corpse.spawnedAt,
-      items: corpse.items || []
+      items: safeItems
     }); } catch(e) {}
   }
   async deleteCorpseDB(worldId, id) {
@@ -15236,6 +15246,14 @@ function checkOceanEntryPrompt() {
 function updateOceanPlayer() {
   if (!player || !oceanMode) return;
 
+  // ── 카메라 따라오기 (심해에서도 카메라 이동) ──
+  const _ocx = player.x - canvas.width / 2 + player.w / 2;
+  const _ocy = player.y - canvas.height / 2 + player.h / 2;
+  camera.x += (_ocx - camera.x) * 0.18;
+  camera.y += (_ocy - camera.y) * 0.18;
+  camera.x = Math.round(Math.max(0, Math.min((WORLD_W - 1) * TILE - canvas.width, camera.x)));
+  camera.y = Math.round(Math.max(-64, Math.min((WORLD_H - 1) * TILE - canvas.height + 64, camera.y)));
+
   // ── 산소 관리 ──
   const hasSuit = playerEquipmentHas('diving_suit');
   if (hasSuit) {
@@ -21022,11 +21040,21 @@ function respawnPlayer(msg) {
       supabase.saveCorpseDB(_chestWorldId(), corpse);
     }
     if (!isOffline && supabase) {
+      // 시체 아이템 정제 (순환 참조 방지): 원시값만 골라냄
+      const safeItems = (corpse.items || []).map(it => {
+        if (!it || typeof it !== 'object') return null;
+        const safe = {
+          id: typeof it.id === 'string' ? it.id : String(it.id || 'unknown'),
+          count: Math.max(1, Math.floor(Number(it.count) || 1))
+        };
+        if (typeof it.durability === 'number') safe.durability = it.durability;
+        return safe;
+      }).filter(Boolean);
       supabase.broadcast('corpse_spawn', {
         id: corpse.id, ownerName: corpse.ownerName,
         x: corpse.x, y: corpse.y,
         spawnedAt: corpse.spawnedAt,
-        items: corpse.items,
+        items: safeItems,
         inDungeon: dungeonMode
       });
     }
