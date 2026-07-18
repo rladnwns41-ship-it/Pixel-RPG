@@ -16975,6 +16975,9 @@ window.openServantShop = function() {
           <button onclick="refreshServantShop(); this.closest('.pixel-modal-overlay').remove(); openServantShop();"
             style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
             background:#1a1a2e; border:2px solid #445; color:#aab;">🔄 재고 갱신 (100G)</button>
+          <button onclick="this.closest('.pixel-modal-overlay').remove(); openServantMineSettings();"
+            style="flex:1; font-family:inherit; font-size:8px; padding:8px; cursor:pointer;
+            background:#1a2a1a; border:2px solid #4a6; color:#8f8;">⛏ 채집 설정</button>
         </div>
       </div>
     </div>`;
@@ -17039,6 +17042,111 @@ window.buyServant = function(idx) {
 };
 
 // ─── 하인 업데이트 (매 프레임: 소유자 따라옴 + 자동 액션) ───
+// ─── 하인 채집 필터 (어떤 블록을 캘지 설정) ───
+let servantMineFilter = null; // null = 전부 캠 (BOT_MINEABLE_TILES 기준)
+function loadServantMineFilter() {
+  try {
+    const raw = localStorage.getItem('servantMineFilter_' + currentUserId);
+    if (raw) servantMineFilter = new Set(JSON.parse(raw));
+  } catch(e) {}
+}
+function saveServantMineFilter() {
+  try {
+    if (!servantMineFilter) localStorage.removeItem('servantMineFilter_' + currentUserId);
+    else localStorage.setItem('servantMineFilter_' + currentUserId, JSON.stringify([...servantMineFilter]));
+  } catch(e) {}
+}
+
+// 하인 채집 설정 UI
+const TILE_NAMES_KR = {
+  [TILES.GRASS]: '잔디', [TILES.DIRT]: '흙', [TILES.STONE]: '돌', [TILES.SAND]: '모래',
+  [TILES.WOOD]: '나무', [TILES.LEAF]: '잎', [TILES.PLANK]: '판자', [TILES.ROOF]: '지붕',
+  [TILES.IRON_ORE]: '철광석', [TILES.GOLD_ORE]: '금광석', [TILES.COPPER_ORE]: '구리광석',
+  [TILES.DIAMOND_ORE]: '다이아몬드', [TILES.COAL_ORE]: '석탄',
+  [TILES.BERRY_BUSH]: '열매 덤불', [TILES.MUSHROOM]: '버섯', [TILES.HERB]: '허브', [TILES.WHEAT]: '밀',
+  [TILES.BRICK]: '벽돌', [TILES.GLASS]: '유리', [TILES.HAY]: '건초',
+};
+const TILE_COLORS = {
+  [TILES.GRASS]: '#4a8', [TILES.DIRT]: '#864', [TILES.STONE]: '#888', [TILES.SAND]: '#da6',
+  [TILES.WOOD]: '#a64', [TILES.LEAF]: '#3a5', [TILES.PLANK]: '#c96', [TILES.ROOF]: '#b44',
+  [TILES.IRON_ORE]: '#bbb', [TILES.GOLD_ORE]: '#fd4', [TILES.COPPER_ORE]: '#d84',
+  [TILES.DIAMOND_ORE]: '#4df', [TILES.COAL_ORE]: '#444',
+  [TILES.BERRY_BUSH]: '#d4a', [TILES.MUSHROOM]: '#d66', [TILES.HERB]: '#6d6', [TILES.WHEAT]: '#dc8',
+  [TILES.BRICK]: '#a55', [TILES.GLASS]: '#adf', [TILES.HAY]: '#cc8',
+};
+
+window.openServantMineSettings = function() {
+  const activeSet = servantMineFilter || new Set(BOT_MINEABLE_TILES);
+  const tiles = [...BOT_MINEABLE_TILES];
+  const overlay = document.createElement('div');
+  overlay.className = 'pixel-modal-overlay';
+  overlay.onmousedown = (e) => { if (e.target === overlay) overlay.remove(); };
+
+  const rows = tiles.map(t => {
+    const on = activeSet.has(t);
+    const name = TILE_NAMES_KR[t] || `블록#${t}`;
+    const col = TILE_COLORS[t] || '#888';
+    return `<div class="smf-row" data-tile="${t}" style="display:flex;align-items:center;gap:8px;padding:5px 10px;cursor:pointer;background:${on ? 'rgba(68,170,102,0.12)' : 'rgba(255,50,50,0.06)'};border:1px solid ${on ? '#2a5a3a' : '#3a1a1a'};margin-bottom:3px;">
+      <div style="width:16px;height:16px;background:${col};border:1px solid #222;flex-shrink:0;"></div>
+      <span style="flex:1;font-size:7.5px;color:${on ? '#88ff88' : '#ff6666'};">${name}</span>
+      <span class="smf-state" style="font-size:7px;color:${on ? '#44aa66' : '#aa4444'};">${on ? '⛏ 채집' : '✕ 안캠'}</span>
+    </div>`;
+  }).join('');
+
+  overlay.innerHTML = `
+    <div class="pixel-modal" style="width:min(400px,92vw);max-height:85vh;display:flex;flex-direction:column;">
+      <div class="panel-header">
+        <span class="panel-title" style="font-size:9px;">⛏ 하인 채집 설정</span>
+        <button class="panel-close" onclick="this.closest('.pixel-modal-overlay').remove()">✕</button>
+      </div>
+      <div class="panel-body" style="padding:10px;overflow-y:auto;">
+        <div style="font-size:7px;color:#8890bb;margin-bottom:8px;text-align:center;line-height:1.7;">
+          클릭하여 하인이 캘 블록을 ON/OFF 하세요
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:10px;justify-content:center;">
+          <button id="smfAll" style="font-family:'Press Start 2P',monospace;font-size:6.5px;padding:5px 10px;background:#1a2a1a;border:1px solid #44aa66;color:#88ff88;cursor:pointer;">전부 ON</button>
+          <button id="smfNone" style="font-family:'Press Start 2P',monospace;font-size:6.5px;padding:5px 10px;background:#2a1a1a;border:1px solid #aa4444;color:#ff6666;cursor:pointer;">전부 OFF</button>
+          <button id="smfOres" style="font-family:'Press Start 2P',monospace;font-size:6.5px;padding:5px 10px;background:#1a1a2a;border:1px solid #4488cc;color:#88ccff;cursor:pointer;">광석만</button>
+        </div>
+        <div id="smfList">${rows}</div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  // 토글 클릭
+  overlay.querySelector('#smfList').addEventListener('click', (e) => {
+    const row = e.target.closest('.smf-row');
+    if (!row) return;
+    const t = parseInt(row.dataset.tile);
+    if (activeSet.has(t)) activeSet.delete(t);
+    else activeSet.add(t);
+    const on = activeSet.has(t);
+    const col = TILE_COLORS[t] || '#888';
+    row.style.background = on ? 'rgba(68,170,102,0.12)' : 'rgba(255,50,50,0.06)';
+    row.style.borderColor = on ? '#2a5a3a' : '#3a1a1a';
+    row.querySelector('span').style.color = on ? '#88ff88' : '#ff6666';
+    row.querySelector('.smf-state').textContent = on ? '⛏ 채집' : '✕ 안캠';
+    row.querySelector('.smf-state').style.color = on ? '#44aa66' : '#aa4444';
+    servantMineFilter = activeSet.size === BOT_MINEABLE_TILES.size ? null : new Set(activeSet);
+    saveServantMineFilter();
+  });
+
+  // 프리셋 버튼
+  overlay.querySelector('#smfAll').addEventListener('click', () => {
+    servantMineFilter = null; saveServantMineFilter();
+    overlay.remove(); openServantMineSettings();
+  });
+  overlay.querySelector('#smfNone').addEventListener('click', () => {
+    servantMineFilter = new Set(); saveServantMineFilter();
+    overlay.remove(); openServantMineSettings();
+  });
+  overlay.querySelector('#smfOres').addEventListener('click', () => {
+    servantMineFilter = new Set([TILES.IRON_ORE, TILES.GOLD_ORE, TILES.COPPER_ORE, TILES.DIAMOND_ORE, TILES.COAL_ORE]);
+    saveServantMineFilter();
+    overlay.remove(); openServantMineSettings();
+  });
+};
+
 // ─── 하인이 근처 블록/나무 채집 (채집한 자원은 소유자 인벤으로!) ───
 function servantMineNearby(s) {
   if (!player) return false;
@@ -17063,6 +17171,8 @@ function servantMineNearby(s) {
     const tile = world[tx] && world[tx][ty];
     if (typeof tile !== 'number') continue;
     if (typeof BOT_MINEABLE_TILES !== 'undefined' && !BOT_MINEABLE_TILES.has(tile)) continue;
+    // 하인 채집 필터 적용
+    if (servantMineFilter && !servantMineFilter.has(tile)) continue;
     const dropId = (typeof BOT_TILE_DROPS !== 'undefined') ? BOT_TILE_DROPS[tile] : null;
     world[tx][ty] = TILES.AIR;
     _tileLayerDirty = true;
@@ -22677,6 +22787,11 @@ function sendChat(rawText) {
     else addChatMessage('시스템', '❌ 하인 고용소 기능 없음', '#FF8888');
     return;
   }
+  if (text === '/채집설정') {
+    if (typeof openServantMineSettings === 'function') openServantMineSettings();
+    else addChatMessage('시스템', '❌ 채집 설정 기능 없음', '#FF8888');
+    return;
+  }
   // ─── HD 모드 ───
   if (text === '/hd' || text === '/HD' || text === '/고사양') {
     if (window.HDMode) window.HDMode.openPanel();
@@ -23832,22 +23947,21 @@ function gameLoop(timestamp) {
   updatePlayer(); updateAnimals(); updateParticles(); updateProjectiles();
   if (typeof updateTraders === 'function') updateTraders();
   if (typeof updateOcean === 'function') updateOcean();
-  if (typeof checkOceanEntryPrompt === 'function') checkOceanEntryPrompt();
+  if (typeof checkOceanEntryPrompt === 'function' && frameCount % 30 === 0) checkOceanEntryPrompt();
   if (typeof updateBots === 'function') updateBots();
-  if (typeof broadcastBots === 'function') broadcastBots();
+  if (typeof broadcastBots === 'function' && frameCount % 10 === 0) broadcastBots();
   if (typeof updateServants === 'function') updateServants();
-  if (typeof broadcastServants === 'function') broadcastServants();
+  if (typeof broadcastServants === 'function' && frameCount % 10 === 0) broadcastServants();
   // 저사양 모드: 물/낮밤 갱신을 격프레임으로 (시각 차이 거의 없음, CPU 절약)
   if (!_perfLow || frameCount % 2 === 0) { updateDayNight(); updateWater(); }
-  updateWeather();
+  if (frameCount % 3 === 0) updateWeather();
   updateFishing();
   updateMinigame();
   if (frameCount % 30 === 0) updateFarmPlots();
   updateDroppedItems();
   if (frameCount % 15 === 0) _checkProximityFlush();
-  updateCorpseBoxes();
-  updateDungeons();
-  updateTraps();
+  if (frameCount % 5 === 0) updateCorpseBoxes();
+  if (frameCount % 3 === 0) { updateDungeons(); updateTraps(); }
   // 일일 리포트 트리거 체크
   if (frameCount % 60 === 0) checkDailyReportTrigger();
   // Combo timer
@@ -25926,6 +26040,7 @@ window.startGame = function (userData) {
   setTimeout(() => {
     if (typeof startServantSync === 'function') startServantSync();
     if (typeof loadServants === 'function') loadServants();
+    if (typeof loadServantMineFilter === 'function') loadServantMineFilter();
   }, 3000);
   // 하인 자동 저장 (30초마다)
   if (!window._servantAutoSaveInterval) {
@@ -26224,34 +26339,43 @@ window.startGame = function (userData) {
   window._popupQueueRunning = true;
   const _popupQueue = [];
 
+  // 헬퍼: 특정 ID 모달이 닫힐 때까지 대기 (없으면 즉시 resolve)
+  function _waitModalClose(id, timeoutMs) {
+    return new Promise(resolve => {
+      let resolved = false;
+      const done = () => { if (!resolved) { resolved = true; resolve(); } };
+      const check = setInterval(() => {
+        if (!document.getElementById(id)) { clearInterval(check); done(); }
+      }, 200);
+      if (timeoutMs) setTimeout(() => { clearInterval(check); done(); }, timeoutMs);
+    });
+  }
+
   // 1) 튜토리얼
   if (localStorage.getItem('tutorialDone') !== 'v5') {
     _popupQueue.push(() => new Promise(resolve => {
-      const _origEnd = showTutorialStep;
-      // 튜토리얼 끝나면 resolve
-      const _checkEnd = setInterval(() => {
+      startTutorial();
+      const check = setInterval(() => {
         if (!tutorialActive && (tutorialShown || localStorage.getItem('tutorialDone') === 'v5')) {
-          clearInterval(_checkEnd);
+          clearInterval(check);
           resolve();
         }
       }, 300);
-      startTutorial();
     }));
   }
 
-  // 2) 일일 출석 보상
-  _popupQueue.push(() => new Promise(resolve => {
+  // 2) 일일 출석 보상 (+ 초대 이벤트가 먼저 뜨면 그것도 대기)
+  _popupQueue.push(async () => {
     try { checkDailyLoginReward(); } catch(e) {}
-    // dailyRewardModal 닫히면 resolve
-    const _checkDaily = setInterval(() => {
-      if (!document.getElementById('dailyRewardModal')) {
-        clearInterval(_checkDaily);
-        resolve();
-      }
-    }, 300);
-    // 안 뜬 경우 대비 2초 타임아웃
-    setTimeout(() => { clearInterval(_checkDaily); resolve(); }, 2000);
-  }));
+    // 초대 이벤트 모달이 떴으면 먼저 대기
+    await _waitModalClose('inviteEventModal', 30000);
+    // 일일 출석 모달 대기 (체크 후 뜨기까지 약간의 딜레이)
+    await new Promise(r => setTimeout(r, 500));
+    // dailyRewardModal이 있으면 닫힐 때까지 대기
+    if (document.getElementById('dailyRewardModal')) {
+      await _waitModalClose('dailyRewardModal', 30000);
+    }
+  });
 
   // 3) 디스코드
   if (!sessionStorage.getItem('discord_shown')) {
@@ -26293,7 +26417,7 @@ window.startGame = function (userData) {
   // 큐 순차 실행
   (async () => {
     for (const fn of _popupQueue) {
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 600));
       await fn();
     }
     window._popupQueueRunning = false;
