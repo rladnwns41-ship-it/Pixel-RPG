@@ -19763,7 +19763,7 @@ function showDailyRewardPopup(streak, reward) {
    'teamInvitePopup','otherPlayerMenuModal','dailyReportModal','tradeRequestPopup'
   ].forEach(id => document.getElementById(id)?.remove());
   document.querySelectorAll('.inv-ctx-menu').forEach(e => e.remove());
-  document.querySelectorAll('.pixel-modal-overlay:not(#dailyRewardModal)').forEach(e => e.remove());
+  document.querySelectorAll('.pixel-modal-overlay:not(#dailyRewardModal):not(#discordModal)').forEach(e => e.remove());
   if (typeof hideItemTooltip === 'function') hideItemTooltip();
   const itemsHtml = reward.items.length > 0
     ? reward.items.map(it => {
@@ -23960,8 +23960,9 @@ function gameLoop(timestamp) {
   if (frameCount % 30 === 0) updateFarmPlots();
   updateDroppedItems();
   if (frameCount % 15 === 0) _checkProximityFlush();
-  if (frameCount % 5 === 0) updateCorpseBoxes();
-  if (frameCount % 3 === 0) { updateDungeons(); updateTraps(); }
+  updateCorpseBoxes();
+  updateDungeons();
+  updateTraps();
   // 일일 리포트 트리거 체크
   if (frameCount % 60 === 0) checkDailyReportTrigger();
   // Combo timer
@@ -26334,94 +26335,85 @@ window.startGame = function (userData) {
     document.addEventListener('visibilitychange', document._visibilityHandler);
   }
 
-  // 튜토리얼 (신규 콘텐츠 추가 시 버전 올려 1회 재노출)
-  // ── 팝업 순서 큐: 튜토리얼 → 일일출석 → 디스코드 ──
+  // ── 팝업 순서: 튜토리얼 → 일일출석 → 디스코드 (순차, 겹침 없음) ──
+  // 단순 폴링 방식: 이전 팝업이 닫혔는지 체크 후 다음 팝업 표시
   window._popupQueueRunning = true;
-  const _popupQueue = [];
 
-  // 헬퍼: 특정 ID 모달이 닫힐 때까지 대기 (없으면 즉시 resolve)
-  function _waitModalClose(id, timeoutMs) {
-    return new Promise(resolve => {
-      let resolved = false;
-      const done = () => { if (!resolved) { resolved = true; resolve(); } };
-      const check = setInterval(() => {
-        if (!document.getElementById(id)) { clearInterval(check); done(); }
-      }, 200);
-      if (timeoutMs) setTimeout(() => { clearInterval(check); done(); }, timeoutMs);
-    });
-  }
-
-  // 1) 튜토리얼
-  if (localStorage.getItem('tutorialDone') !== 'v5') {
-    _popupQueue.push(() => new Promise(resolve => {
-      startTutorial();
-      const check = setInterval(() => {
-        if (!tutorialActive && (tutorialShown || localStorage.getItem('tutorialDone') === 'v5')) {
-          clearInterval(check);
-          resolve();
-        }
-      }, 300);
-    }));
-  }
-
-  // 2) 일일 출석 보상 (+ 초대 이벤트가 먼저 뜨면 그것도 대기)
-  _popupQueue.push(async () => {
-    try { checkDailyLoginReward(); } catch(e) {}
-    // 초대 이벤트 모달이 떴으면 먼저 대기
-    await _waitModalClose('inviteEventModal', 30000);
-    // 일일 출석 모달 대기 (체크 후 뜨기까지 약간의 딜레이)
-    await new Promise(r => setTimeout(r, 500));
-    // dailyRewardModal이 있으면 닫힐 때까지 대기
-    if (document.getElementById('dailyRewardModal')) {
-      await _waitModalClose('dailyRewardModal', 30000);
-    }
-  });
-
-  // 3) 디스코드
-  if (!sessionStorage.getItem('discord_shown')) {
-    _popupQueue.push(() => new Promise(resolve => {
-      sessionStorage.setItem('discord_shown', '1');
-      const modal = document.createElement('div');
-      modal.className = 'pixel-modal-overlay';
-      modal.id = 'discordModal';
-      modal.style.zIndex = '99999';
-      modal.innerHTML = `
-        <div class="pixel-modal" style="min-width:320px;max-width:400px;text-align:center;">
-          <div class="panel-header" style="justify-content:center;">
-            <span class="panel-title" style="font-size:10px;color:#5865F2;">🎮 디스코드 서버</span>
+  function _showDiscordPopup() {
+    if (sessionStorage.getItem('discord_shown')) { window._popupQueueRunning = false; return; }
+    sessionStorage.setItem('discord_shown', '1');
+    const modal = document.createElement('div');
+    modal.className = 'pixel-modal-overlay';
+    modal.id = 'discordModal';
+    modal.style.zIndex = '99999';
+    modal.innerHTML = `
+      <div class="pixel-modal" style="min-width:320px;max-width:400px;text-align:center;">
+        <div class="panel-header" style="justify-content:center;">
+          <span class="panel-title" style="font-size:10px;color:#5865F2;">🎮 디스코드 서버</span>
+        </div>
+        <div class="panel-body" style="padding:20px 24px 22px;">
+          <div style="width:48px;height:48px;margin:0 auto 14px;background:linear-gradient(135deg,#5865F2,#4752C4);border-radius:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 16px rgba(88,101,242,0.4);">
+            <svg width="28" height="22" viewBox="0 0 28 22" fill="white"><path d="M23.7 1.8A23 23 0 0018 0a.1.1 0 00-.1 0 16 16 0 00-.7 1.5 21.3 21.3 0 00-6.4 0A14 14 0 0010 0h-.1A23 23 0 004.3 1.8 24 24 0 00.1 18a23 23 0 007 3.6.1.1 0 00.1 0 16 16 0 001.4-2.3.1.1 0 000-.1 15 15 0 01-2.2-1.1c0 0 .2-.1.4-.3a16.4 16.4 0 0014.2 0l.4.3a15 15 0 01-2.2 1 .1.1 0 000 .2 18 18 0 001.5 2.3h.1a23 23 0 007-3.6A24 24 0 0023.7 1.8zM9.4 14.7c-1.4 0-2.5-1.3-2.5-2.9s1.1-2.9 2.5-2.9 2.5 1.3 2.5 2.9-1.1 2.9-2.5 2.9zm9.2 0c-1.4 0-2.5-1.3-2.5-2.9s1.1-2.9 2.5-2.9 2.5 1.3 2.5 2.9-1.1 2.9-2.5 2.9z"/></svg>
           </div>
-          <div class="panel-body" style="padding:20px 24px 22px;">
-            <div style="width:48px;height:48px;margin:0 auto 14px;background:linear-gradient(135deg,#5865F2,#4752C4);border-radius:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 16px rgba(88,101,242,0.4);">
-              <svg width="28" height="22" viewBox="0 0 28 22" fill="white"><path d="M23.7 1.8A23 23 0 0018 0a.1.1 0 00-.1 0 16 16 0 00-.7 1.5 21.3 21.3 0 00-6.4 0A14 14 0 0010 0h-.1A23 23 0 004.3 1.8 24 24 0 00.1 18a23 23 0 007 3.6.1.1 0 00.1 0 16 16 0 001.4-2.3.1.1 0 000-.1 15 15 0 01-2.2-1.1c0 0 .2-.1.4-.3a16.4 16.4 0 0014.2 0l.4.3a15 15 0 01-2.2 1 .1.1 0 000 .2 18 18 0 001.5 2.3h.1a23 23 0 007-3.6A24 24 0 0023.7 1.8zM9.4 14.7c-1.4 0-2.5-1.3-2.5-2.9s1.1-2.9 2.5-2.9 2.5 1.3 2.5 2.9-1.1 2.9-2.5 2.9zm9.2 0c-1.4 0-2.5-1.3-2.5-2.9s1.1-2.9 2.5-2.9 2.5 1.3 2.5 2.9-1.1 2.9-2.5 2.9z"/></svg>
-            </div>
-            <div style="font-size:10px;color:#ffd700;margin-bottom:6px;text-shadow:1px 1px 0 #664400;">공식 디스코드에 참여하세요!</div>
-            <div style="font-size:8px;color:#8890bb;margin-bottom:18px;line-height:1.8;">공지 · 업데이트 · 버그제보 · 유저소통<br>모든 소식을 가장 빠르게!</div>
-            <div style="display:flex;gap:10px;justify-content:center;">
-              <button id="_dcJoin" style="font-family:'Press Start 2P',monospace;font-size:8px;background:linear-gradient(135deg,#5865F2,#4752C4);border:2px solid transparent;border-top-color:#7983F5;border-left-color:#7983F5;border-bottom-color:#3640A0;border-right-color:#3640A0;color:#fff;padding:9px 20px;cursor:pointer;box-shadow:2px 2px 0 #000;">가입하기</button>
-              <button id="_dcClose" style="font-family:'Press Start 2P',monospace;font-size:7px;background:linear-gradient(135deg,#141830,#0c1022);border:2px solid transparent;border-top-color:#3a4070;border-left-color:#3a4070;border-bottom-color:#060810;border-right-color:#060810;color:#6670aa;padding:9px 16px;cursor:pointer;box-shadow:2px 2px 0 #000;">닫기</button>
-            </div>
+          <div style="font-size:10px;color:#ffd700;margin-bottom:6px;text-shadow:1px 1px 0 #664400;">공식 디스코드에 참여하세요!</div>
+          <div style="font-size:8px;color:#8890bb;margin-bottom:18px;line-height:1.8;">공지 · 업데이트 · 버그제보 · 유저소통<br>모든 소식을 가장 빠르게!</div>
+          <div style="display:flex;gap:10px;justify-content:center;">
+            <button id="_dcJoin" style="font-family:'Press Start 2P',monospace;font-size:8px;background:linear-gradient(135deg,#5865F2,#4752C4);border:2px solid transparent;border-top-color:#7983F5;border-left-color:#7983F5;border-bottom-color:#3640A0;border-right-color:#3640A0;color:#fff;padding:9px 20px;cursor:pointer;box-shadow:2px 2px 0 #000;">가입하기</button>
+            <button id="_dcClose" style="font-family:'Press Start 2P',monospace;font-size:7px;background:linear-gradient(135deg,#141830,#0c1022);border:2px solid transparent;border-top-color:#3a4070;border-left-color:#3a4070;border-bottom-color:#060810;border-right-color:#060810;color:#6670aa;padding:9px 16px;cursor:pointer;box-shadow:2px 2px 0 #000;">닫기</button>
           </div>
         </div>
-      `;
-      document.body.appendChild(modal);
-      const _close = () => { modal.remove(); resolve(); };
-      document.getElementById('_dcJoin').addEventListener('click', () => {
-        window.open('https://discord.gg/4rjPkms6Ye', '_blank');
-        _close();
-      });
-      document.getElementById('_dcClose').addEventListener('click', _close);
-      modal.addEventListener('click', (e) => { if (e.target === modal) _close(); });
-    }));
+      </div>
+    `;
+    document.body.appendChild(modal);
+    const _close = () => { modal.remove(); window._popupQueueRunning = false; };
+    document.getElementById('_dcJoin').addEventListener('click', () => {
+      window.open('https://discord.gg/4rjPkms6Ye', '_blank');
+      _close();
+    });
+    document.getElementById('_dcClose').addEventListener('click', _close);
+    modal.addEventListener('click', (e) => { if (e.target === modal) _close(); });
   }
 
-  // 큐 순차 실행
-  (async () => {
-    for (const fn of _popupQueue) {
-      await new Promise(r => setTimeout(r, 600));
-      await fn();
-    }
-    window._popupQueueRunning = false;
-  })();
+  // 스텝2: 일일출석 모달 끝나면 → 디스코드
+  function _stepDailyThenDiscord() {
+    try { checkDailyLoginReward(); } catch(e) {}
+    // 일일출석/초대이벤트 모달이 열려있으면 닫힐 때까지 대기, 없으면 바로 다음
+    let _tries = 0;
+    const _poll = setInterval(() => {
+      _tries++;
+      const hasDaily = document.getElementById('dailyRewardModal');
+      const hasInvite = document.getElementById('inviteEventModal');
+      if (!hasDaily && !hasInvite) {
+        clearInterval(_poll);
+        // 첫 체크에 둘 다 없었으면 모달이 아예 안 뜬 것 → 바로 디스코드
+        // 아니면 유저가 닫은 것 → 0.5초 후 디스코드
+        setTimeout(_showDiscordPopup, _tries <= 1 ? 300 : 500);
+      }
+      if (_tries > 150) { // 30초 안전장치
+        clearInterval(_poll);
+        _showDiscordPopup();
+      }
+    }, 200);
+  }
+
+  // 스텝1: 튜토리얼 → 일일출석 → 디스코드
+  if (localStorage.getItem('tutorialDone') !== 'v5') {
+    setTimeout(() => {
+      startTutorial();
+      // 튜토리얼 끝날 때까지 폴링
+      const _tPoll = setInterval(() => {
+        if (!tutorialActive && (tutorialShown || localStorage.getItem('tutorialDone') === 'v5')) {
+          clearInterval(_tPoll);
+          setTimeout(_stepDailyThenDiscord, 500);
+        }
+      }, 300);
+      // 60초 안전장치
+      setTimeout(() => { clearInterval(_tPoll); _stepDailyThenDiscord(); }, 60000);
+    }, 1500);
+  } else {
+    // 튜토리얼 이미 완료 → 바로 일일출석 → 디스코드
+    setTimeout(_stepDailyThenDiscord, 800);
+  }
 
   // 채팅 입력 중 게임으로 키 이벤트 전달 차단 + Enter 직접 처리
   const _ci = document.getElementById('chatInput');
