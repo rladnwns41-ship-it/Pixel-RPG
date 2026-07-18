@@ -523,15 +523,16 @@ app.use((req, res, next) => {
   // Origin 정책
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
-  // CSP — 게임이 인라인 스크립트/이벤트를 쓰므로 unsafe-inline 허용하되, 출처는 제한
+  // CSP — 게임이 인라인 스크립트/이벤트를 쓰므로 unsafe-inline 허용, https 전체 허용 (개발/게임 편의)
   res.setHeader('Content-Security-Policy',
-    "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://cdn.jsdelivr.net https://unpkg.com; " +
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-    "font-src 'self' https://fonts.gstatic.com data:; " +
-    "img-src 'self' data: blob:; " +
-    "media-src 'self' data: blob:; " +
-    "connect-src 'self' ws: wss: https://*.firebaseio.com https://*.googleapis.com https://api.groq.com https://*.onrender.com https://*.supabase.co; " +
+    "default-src 'self' https:; " +
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; " +
+    "script-src-elem 'self' 'unsafe-inline' https:; " +
+    "style-src 'self' 'unsafe-inline' https:; " +
+    "font-src 'self' https: data:; " +
+    "img-src 'self' https: data: blob:; " +
+    "media-src 'self' https: data: blob:; " +
+    "connect-src 'self' ws: wss: https:; " +
     "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'");
   next();
 });
